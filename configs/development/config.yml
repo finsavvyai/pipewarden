@@ -1,0 +1,19 @@
+environment: development
+server:
+  port: 8080
+  readTimeout: 5s
+  writeTimeout: 10s
+  idleTimeout: 120s
+database:
+  host: localhost
+  port: 5432
+  username: postgres
+  password: postgres
+  name: pipewarden
+  sslMode: disable
+auth:
+  jwtSecret: "your-secret-key-here"
+  tokenDuration: 24h
+logging:
+  level: debug
+  json: false
