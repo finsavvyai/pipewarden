@@ -11,6 +11,7 @@ type Platform string
 const (
 	PlatformGitHub    Platform = "github"
 	PlatformBitbucket Platform = "bitbucket"
+	PlatformGitLab    Platform = "gitlab"
 )
 
 // PipelineStatus represents the current state of a pipeline run.

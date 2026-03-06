@@ -16,6 +16,7 @@ import (
 	"github.com/finsavvyai/pipewarden/internal/integrations"
 	"github.com/finsavvyai/pipewarden/internal/integrations/bitbucket"
 	"github.com/finsavvyai/pipewarden/internal/integrations/github"
+	"github.com/finsavvyai/pipewarden/internal/integrations/gitlab"
 	"github.com/finsavvyai/pipewarden/internal/logging"
 )
 
@@ -62,6 +63,15 @@ func main() {
 		}, logger)
 		manager.Register(bbClient)
 		logger.Info("Bitbucket Pipelines integration enabled")
+	}
+
+	if cfg.Integrations.GitLab.Enabled {
+		glClient := gitlab.NewClient(gitlab.Config{
+			Token:   cfg.Integrations.GitLab.Token,
+			BaseURL: cfg.Integrations.GitLab.BaseURL,
+		}, logger)
+		manager.Register(glClient)
+		logger.Info("GitLab CI/CD integration enabled")
 	}
 
 	// Setup HTTP server

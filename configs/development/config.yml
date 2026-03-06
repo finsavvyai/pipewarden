@@ -27,3 +27,7 @@ integrations:
     username: ""
     appPassword: ""
     baseURL: "https://api.bitbucket.org/2.0"
+  gitlab:
+    enabled: false
+    token: ""
+    baseURL: "https://gitlab.com/api/v4"

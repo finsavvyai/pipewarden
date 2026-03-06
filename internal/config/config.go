@@ -22,6 +22,14 @@ type Config struct {
 type IntegrationsConfig struct {
 	GitHub    GitHubConfig
 	Bitbucket BitbucketConfig
+	GitLab    GitLabConfig
+}
+
+// GitLabConfig holds GitLab CI/CD integration configuration
+type GitLabConfig struct {
+	Enabled bool
+	Token   string
+	BaseURL string
 }
 
 // GitHubConfig holds GitHub Actions integration configuration
