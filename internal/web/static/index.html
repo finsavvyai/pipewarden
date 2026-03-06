@@ -559,6 +559,78 @@
     .rec-detail { font-size: 12px; color: var(--muted); margin-top: 2px; }
 
     .overview-full { grid-column: 1 / -1; }
+
+    /* Onboarding wizard */
+    .onboarding-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 150;
+      animation: fadeIn 0.3s;
+    }
+    .onboarding-overlay.hidden { display: none; }
+    .onboarding {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      width: 560px;
+      max-width: 95vw;
+      padding: 32px;
+      animation: slideUp 0.3s;
+      text-align: center;
+    }
+    .onboarding h2 { font-size: 22px; margin-bottom: 8px; }
+    .onboarding .subtitle { color: var(--muted); font-size: 14px; margin-bottom: 24px; }
+    .onboarding-steps { display: flex; flex-direction: column; gap: 12px; margin-bottom: 24px; text-align: left; }
+    .onboarding-step {
+      display: flex; align-items: flex-start; gap: 12px;
+      padding: 14px; background: var(--bg); border-radius: var(--radius);
+      border: 1px solid var(--border);
+    }
+    .onboarding-step .step-num {
+      width: 28px; height: 28px; border-radius: 50%;
+      background: var(--accent); color: #fff; font-weight: 700; font-size: 13px;
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .onboarding-step h4 { font-size: 14px; margin-bottom: 2px; }
+    .onboarding-step p { font-size: 12px; color: var(--muted); line-height: 1.4; }
+    .platform-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 16px 0; }
+    .platform-card {
+      padding: 16px 12px; border: 1px solid var(--border); border-radius: var(--radius);
+      cursor: pointer; text-align: center; transition: all 0.15s; background: var(--bg);
+    }
+    .platform-card:hover { border-color: var(--accent); background: var(--accent-glow); }
+    .platform-card .p-icon { font-size: 24px; font-weight: 700; margin-bottom: 6px; }
+    .platform-card .p-name { font-size: 13px; font-weight: 600; }
+
+    /* Token help link */
+    .token-help-link {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: 11px; color: var(--accent); text-decoration: none;
+      margin-top: 4px;
+    }
+    .token-help-link:hover { text-decoration: underline; }
+
+    /* Form validation */
+    .form-group input.invalid, .form-group select.invalid {
+      border-color: var(--red);
+    }
+    .form-group .field-error {
+      font-size: 11px; color: var(--red); margin-top: 3px; display: none;
+    }
+    .form-group .field-error.visible { display: block; }
+
+    /* Troubleshoot panel */
+    .troubleshoot-panel {
+      background: var(--bg); border: 1px solid rgba(239,68,68,0.3); border-radius: var(--radius);
+      padding: 12px 14px; margin-top: 8px; font-size: 12px; line-height: 1.5;
+    }
+    .troubleshoot-panel h4 { font-size: 12px; color: var(--red); margin-bottom: 6px; }
+    .troubleshoot-panel ul { padding-left: 16px; color: var(--muted); }
+    .troubleshoot-panel li { margin-bottom: 4px; }
   </style>
 </head>
 <body>
@@ -695,40 +767,49 @@
         <div id="fields-github" class="platform-fields active">
           <div class="form-group">
             <label>Personal Access Token</label>
-            <input type="password" id="gh-token" placeholder="ghp_xxx">
-            <div class="help">Requires repo and workflow scopes</div>
+            <input type="password" id="gh-token" placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
+            <div class="help">Required scopes: <strong>repo</strong> (full access) and <strong>workflow</strong> (Actions read)</div>
+            <a class="token-help-link" href="https://github.com/settings/tokens/new?scopes=repo,workflow&description=PipeWarden" target="_blank" rel="noopener">Create a GitHub token with correct scopes &rarr;</a>
+            <div class="field-error" id="gh-token-error">Token is required. It should start with "ghp_" or "github_pat_"</div>
           </div>
           <div class="form-group">
             <label>Base URL (optional)</label>
             <input type="text" id="gh-base-url" placeholder="https://api.github.com">
-            <div class="help">Only needed for GitHub Enterprise</div>
+            <div class="help">Leave empty for github.com. Only set for GitHub Enterprise (e.g. https://github.yourcompany.com/api/v3)</div>
           </div>
         </div>
         <div id="fields-gitlab" class="platform-fields">
           <div class="form-group">
             <label>Access Token</label>
-            <input type="password" id="gl-token" placeholder="glpat-xxx">
-            <div class="help">Requires api scope</div>
+            <input type="password" id="gl-token" placeholder="glpat-xxxxxxxxxxxxxxxxxxxx">
+            <div class="help">Required scope: <strong>api</strong> (full API access) — either Personal or Project token</div>
+            <a class="token-help-link" href="https://gitlab.com/-/user_settings/personal_access_tokens?name=PipeWarden&scopes=api" target="_blank" rel="noopener">Create a GitLab Personal Access Token &rarr;</a>
+            <div class="field-error" id="gl-token-error">Token is required. GitLab tokens typically start with "glpat-"</div>
           </div>
           <div class="form-group">
             <label>Base URL (optional)</label>
             <input type="text" id="gl-base-url" placeholder="https://gitlab.com/api/v4">
-            <div class="help">Only needed for self-hosted instances</div>
+            <div class="help">Leave empty for gitlab.com. For self-hosted: https://your-gitlab.com/api/v4</div>
           </div>
         </div>
         <div id="fields-bitbucket" class="platform-fields">
           <div class="form-group">
             <label>Username</label>
-            <input type="text" id="bb-username" placeholder="your-username">
+            <input type="text" id="bb-username" placeholder="your-atlassian-username">
+            <div class="help">Your Atlassian/Bitbucket username (not email)</div>
+            <div class="field-error" id="bb-username-error">Username is required</div>
           </div>
           <div class="form-group">
             <label>App Password</label>
-            <input type="password" id="bb-app-password" placeholder="your-app-password">
-            <div class="help">Requires pipeline:read permission</div>
+            <input type="password" id="bb-app-password" placeholder="xxxxxxxxxxxxxxxxxxxx">
+            <div class="help">Required permission: <strong>Pipelines: Read</strong></div>
+            <a class="token-help-link" href="https://bitbucket.org/account/settings/app-passwords/new" target="_blank" rel="noopener">Create a Bitbucket App Password &rarr;</a>
+            <div class="field-error" id="bb-password-error">App password is required</div>
           </div>
           <div class="form-group">
             <label>Base URL (optional)</label>
             <input type="text" id="bb-base-url" placeholder="https://api.bitbucket.org/2.0">
+            <div class="help">Leave empty for bitbucket.org. Only set for Bitbucket Server/Data Center.</div>
           </div>
         </div>
         <div class="form-actions">
@@ -853,6 +934,57 @@
     </div>
   </div>
 
+  <!-- Onboarding Wizard -->
+  <div class="onboarding-overlay hidden" id="onboarding-overlay">
+    <div class="onboarding">
+      <h2>Welcome to <span style="color:var(--accent)">Pipe</span>Warden</h2>
+      <div class="subtitle">CI/CD Pipeline Security Monitoring</div>
+
+      <div id="onboarding-step-1">
+        <div class="onboarding-steps">
+          <div class="onboarding-step">
+            <div class="step-num">1</div>
+            <div>
+              <h4>Connect your CI/CD platform</h4>
+              <p>Link a GitHub, GitLab, or Bitbucket account so PipeWarden can monitor your pipelines.</p>
+            </div>
+          </div>
+          <div class="onboarding-step">
+            <div class="step-num">2</div>
+            <div>
+              <h4>Scan a pipeline run</h4>
+              <p>Use Quick Scan (instant, rule-based) or AI Analysis (deep, Claude-powered) to check for security issues.</p>
+            </div>
+          </div>
+          <div class="onboarding-step">
+            <div class="step-num">3</div>
+            <div>
+              <h4>Review and remediate findings</h4>
+              <p>Triage security findings, track your security posture, and export reports for your team.</p>
+            </div>
+          </div>
+        </div>
+
+        <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Choose your platform to get started:</p>
+        <div class="platform-cards">
+          <div class="platform-card" onclick="onboardingAddPlatform('github')">
+            <div class="p-icon" style="color:#f9fafb">GH</div>
+            <div class="p-name">GitHub</div>
+          </div>
+          <div class="platform-card" onclick="onboardingAddPlatform('gitlab')">
+            <div class="p-icon" style="color:#fc6d26">GL</div>
+            <div class="p-name">GitLab</div>
+          </div>
+          <div class="platform-card" onclick="onboardingAddPlatform('bitbucket')">
+            <div class="p-icon" style="color:#2684ff">BB</div>
+            <div class="p-name">Bitbucket</div>
+          </div>
+        </div>
+        <button class="btn btn-ghost" onclick="dismissOnboarding()" style="margin-top:8px">Skip for now</button>
+      </div>
+    </div>
+  </div>
+
 <script>
 const API = '/api/v1';
 let allConnections = [];
@@ -870,6 +1002,7 @@ document.addEventListener('DOMContentLoaded', () => {
   startAutoRefresh();
   setupKeyboard();
   setupTabs();
+  checkOnboarding();
 });
 
 function setupTabs() {
@@ -969,19 +1102,24 @@ function renderConnections(conns) {
     const msg = connFilter !== 'all'
       ? `No ${connFilter} connections`
       : 'No connections yet';
-    list.innerHTML = `<div class="empty-state"><h3>${msg}</h3><p>Add your first CI/CD connection to get started.</p></div>`;
+    const addTip = connFilter === 'all'
+      ? `<p>Add your first CI/CD connection to start monitoring pipeline security.</p><button class="btn btn-primary" onclick="showAddModal()" style="margin-top:12px">+ Add Connection</button>`
+      : `<p>No ${connFilter} connections found.</p>`;
+    list.innerHTML = `<div class="empty-state"><h3>${msg}</h3>${addTip}</div>`;
     return;
   }
   list.innerHTML = filtered.map(c => {
     const st = connectionStatuses[c.name];
     let statusHTML = '<span class="status-dot unknown"></span><span>Not tested</span>';
+    let troubleshootHTML = '';
     if (st === 'testing') {
       statusHTML = '<span class="status-dot pending"></span><span>Testing...</span>';
     } else if (st && st.connected) {
       const latency = st.latency ? (st.latency/1e6).toFixed(0) + 'ms' : '';
       statusHTML = `<span class="status-dot ok"></span><span>${esc(st.user || 'Connected')} ${latency ? '&middot; ' + latency : ''}</span>`;
     } else if (st && !st.connected) {
-      statusHTML = `<span class="status-dot fail"></span><span>${esc(st.message || 'Failed')}</span>`;
+      statusHTML = `<span class="status-dot fail"></span><span>${esc(st.message || 'Connection failed')}</span>`;
+      troubleshootHTML = renderTroubleshoot(c.platform, st.message || '');
     }
     const icon = c.platform === 'github' ? 'GH' : c.platform === 'gitlab' ? 'GL' : 'BB';
     return `
@@ -999,7 +1137,8 @@ function renderConnections(conns) {
           <button class="btn btn-outline btn-sm" onclick="showEditModal('${esc(c.name)}','${esc(c.platform)}','${esc(c.base_url || '')}')">Edit</button>
           <button class="btn btn-danger btn-sm" onclick="deleteConn('${esc(c.name)}')">Remove</button>
         </div>
-      </div>`;
+      </div>
+      ${troubleshootHTML}`;
   }).join('');
 }
 
@@ -1031,10 +1170,12 @@ async function loadFindingStats() {
 // ===== Connection CRUD =====
 async function saveConnection(e) {
   e.preventDefault();
+  if (!validateConnectionForm()) return;
+
   const editMode = document.getElementById('edit-mode').value;
   const platform = document.getElementById('conn-platform').value;
   const body = {
-    name: document.getElementById('conn-name').value,
+    name: document.getElementById('conn-name').value.trim(),
     platform: platform,
   };
   if (platform === 'github') {
@@ -1066,16 +1207,20 @@ async function saveConnection(e) {
     }
     if (!res.ok) {
       const err = await res.json();
-      toast(err.error || 'Failed', 'error');
+      if (err.error && err.error.includes('already exists')) {
+        toast('A connection with this name already exists. Choose a different name.', 'error');
+      } else {
+        toast(err.error || 'Failed to save connection', 'error');
+      }
       return;
     }
-    toast(editMode ? 'Connection updated!' : 'Connection added!', 'success');
+    toast(editMode ? 'Connection updated!' : 'Connection added! Click "Test" to verify it works.', 'success');
     closeModal('add-modal');
     document.getElementById('add-form').reset();
     document.getElementById('edit-mode').value = '';
     loadConnections();
   } catch (e) {
-    toast('Network error', 'error');
+    toast('Network error. Check that PipeWarden server is running.', 'error');
   }
 }
 
@@ -1683,6 +1828,121 @@ function exportFindings(format) {
   const url = API + '/analysis/findings/export?format=' + format;
   window.open(url, '_blank');
   toast('Export started', 'info');
+}
+
+// ===== Onboarding =====
+async function checkOnboarding() {
+  try {
+    const res = await fetch(API + '/connections');
+    const data = await res.json();
+    const conns = data.connections || [];
+    if (conns.length === 0 && !sessionStorage.getItem('onboarding_dismissed')) {
+      document.getElementById('onboarding-overlay').classList.remove('hidden');
+    }
+  } catch (e) { /* ignore */ }
+}
+
+function onboardingAddPlatform(platform) {
+  dismissOnboarding();
+  showAddModal();
+  document.getElementById('conn-platform').value = platform;
+  togglePlatformFields();
+}
+
+function dismissOnboarding() {
+  document.getElementById('onboarding-overlay').classList.add('hidden');
+  sessionStorage.setItem('onboarding_dismissed', '1');
+}
+
+// ===== Form Validation =====
+function validateConnectionForm() {
+  const platform = document.getElementById('conn-platform').value;
+  const editMode = document.getElementById('edit-mode').value;
+  let valid = true;
+
+  // Clear previous errors
+  document.querySelectorAll('.field-error').forEach(e => e.classList.remove('visible'));
+  document.querySelectorAll('.form-group input.invalid').forEach(e => e.classList.remove('invalid'));
+
+  const name = document.getElementById('conn-name').value.trim();
+  if (!name) {
+    valid = false;
+    toast('Connection name is required', 'error');
+  }
+
+  if (platform === 'github') {
+    const token = document.getElementById('gh-token').value;
+    if (!token && !editMode) {
+      document.getElementById('gh-token').classList.add('invalid');
+      document.getElementById('gh-token-error').classList.add('visible');
+      valid = false;
+    }
+  } else if (platform === 'gitlab') {
+    const token = document.getElementById('gl-token').value;
+    if (!token && !editMode) {
+      document.getElementById('gl-token').classList.add('invalid');
+      document.getElementById('gl-token-error').classList.add('visible');
+      valid = false;
+    }
+  } else if (platform === 'bitbucket') {
+    const user = document.getElementById('bb-username').value;
+    const pass = document.getElementById('bb-app-password').value;
+    if (!user && !editMode) {
+      document.getElementById('bb-username').classList.add('invalid');
+      document.getElementById('bb-username-error').classList.add('visible');
+      valid = false;
+    }
+    if (!pass && !editMode) {
+      document.getElementById('bb-app-password').classList.add('invalid');
+      document.getElementById('bb-password-error').classList.add('visible');
+      valid = false;
+    }
+  }
+  return valid;
+}
+
+// ===== Improved Connection Testing =====
+function renderTroubleshoot(platform, errorMsg) {
+  const msg = (errorMsg || '').toLowerCase();
+  let tips = [];
+
+  if (msg.includes('401') || msg.includes('unauthorized') || msg.includes('bad credentials')) {
+    tips.push('Your token or credentials are invalid or expired');
+    if (platform === 'github') {
+      tips.push('Ensure your token has <strong>repo</strong> and <strong>workflow</strong> scopes');
+      tips.push('Check if the token has been revoked in GitHub Settings > Developer Settings > Personal Access Tokens');
+    } else if (platform === 'gitlab') {
+      tips.push('Ensure your token has the <strong>api</strong> scope and has not expired');
+      tips.push('Check token expiry in GitLab > User Settings > Access Tokens');
+    } else {
+      tips.push('Verify your username and app password are correct');
+      tips.push('Ensure the app password has <strong>Pipelines: Read</strong> permission');
+    }
+  } else if (msg.includes('403') || msg.includes('forbidden')) {
+    tips.push('Your token lacks required permissions');
+    if (platform === 'github') tips.push('The token needs <strong>repo</strong> scope for private repos');
+    if (platform === 'gitlab') tips.push('You may need project-level access, not just a valid token');
+    if (platform === 'bitbucket') tips.push('Add <strong>Pipelines: Read</strong> permission to your app password');
+  } else if (msg.includes('404') || msg.includes('not found')) {
+    tips.push('The API endpoint was not found. Check your Base URL setting');
+    if (platform === 'github') tips.push('For GitHub Enterprise, use https://YOUR-HOST/api/v3');
+    if (platform === 'gitlab') tips.push('For self-hosted GitLab, use https://YOUR-HOST/api/v4');
+  } else if (msg.includes('timeout') || msg.includes('deadline') || msg.includes('context')) {
+    tips.push('The connection timed out. Check your network and the server URL');
+    tips.push('If using a self-hosted instance, ensure it is reachable from this server');
+  } else if (msg.includes('dns') || msg.includes('no such host') || msg.includes('dial')) {
+    tips.push('Cannot reach the server. Check the Base URL for typos');
+    tips.push('Ensure the server is accessible from the network where PipeWarden runs');
+  } else {
+    tips.push('Check that your credentials are correct and not expired');
+    tips.push('Verify your Base URL is correct (leave empty for cloud-hosted platforms)');
+    tips.push('Ensure the platform is accessible from this network');
+  }
+
+  return `<div class="troubleshoot-panel">
+    <h4>Troubleshooting</h4>
+    <ul>${tips.map(t => `<li>${t}</li>`).join('')}</ul>
+  </div>`;
 }
 </script>
 </body>
