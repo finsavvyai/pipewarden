@@ -12,206 +12,281 @@
 
 ---
 
-## 📋 Table of Contents
+## Table of Contents
 
 - [Overview](#overview)
 - [Key Features](#key-features)
 - [Architecture](#architecture)
 - [Getting Started](#getting-started)
+- [Web Dashboard](#web-dashboard)
+- [Integrations](#integrations)
+- [API Reference](#api-reference)
 - [Configuration](#configuration)
 - [Development](#development)
+- [Testing](#testing)
 - [Deployment](#deployment)
-- [API Documentation](#api-documentation)
-- [Integrations](#integrations)
-- [FAQ](#faq)
 - [Roadmap](#roadmap)
 - [Contributing](#contributing)
 - [License](#license)
 
 ---
 
-## 🔍 Overview
+## Overview
 
-PipeWarden is a comprehensive DevSecOps Pipeline Orchestrator that acts as a security guardian for your CI/CD pipelines. It continuously monitors, scans, and enforces security policies throughout your development lifecycle across multiple CI/CD platforms.
-
-With PipeWarden, security becomes an integral part of your development process, not a bottleneck. It helps you identify vulnerabilities early, enforce security policies automatically, and provide clear remediation guidance - all while integrating seamlessly with your existing development workflows.
+PipeWarden is a DevSecOps Pipeline Orchestrator that acts as a security guardian for your CI/CD pipelines. It monitors, scans, and enforces security policies across multiple CI/CD platforms from a single dashboard.
 
 ### Why PipeWarden?
 
-- **Universal Integration** - Works with multiple CI/CD platforms including GitLab, GitHub Actions, Jenkins, and more
+- **Multi-Connection** - Connect unlimited accounts per platform (multiple GitHub orgs, GitLab instances, Bitbucket workspaces)
+- **Web Dashboard** - Add, remove, and test connections from a browser UI with real-time status
+- **DB Persistence** - SQLite storage keeps connections across restarts
+- **Universal Integration** - GitHub Actions, GitLab CI/CD, and Bitbucket Pipelines with a pluggable provider interface
 - **Policy-Driven Security** - Define security rules once and apply them everywhere
-- **Intelligent Analysis** - AI-powered vulnerability context and remediation suggestions
-- **Developer-Friendly** - Clear feedback and guidance without disrupting workflows
-- **Compliance Automation** - Map security controls directly to compliance frameworks
+- **AI Analysis** - AI-powered vulnerability context and remediation suggestions
 
 ---
 
-## ✨ Key Features
+## Key Features
 
-### 🛡️ Security Policy Engine
+### Connection Manager
+
+Manage all your CI/CD platform connections from the web dashboard:
+
+- Add unlimited connections per platform (e.g. 3 GitHub orgs + 2 GitLab instances)
+- Test individual connections or all at once with one click
+- Live status indicators (connected, failed, testing)
+- Platform-specific credential fields (tokens, app passwords)
+- Persistent storage in SQLite - survives restarts
+
+### Supported Platforms
+
+| Platform | Auth Method | Features |
+|----------|-------------|----------|
+| **GitHub Actions** | Personal Access Token | Workflows, runs, dispatch triggers, OAuth scope detection |
+| **GitLab CI/CD** | Access Token (PRIVATE-TOKEN) | Pipelines, runs, triggers, self-hosted instances |
+| **Bitbucket Pipelines** | App Password (Basic Auth) | Pipelines, runs, triggers |
+
+### Security Policy Engine
 
 - Create and manage security policies with an intuitive UI
-- Define custom rules for vulnerability thresholds, compliance requirements
-- Apply policies at different stages of development
-- Version control your security policies
+- Define custom rules for vulnerability thresholds and compliance requirements
 - Template library for common security requirements
 
-### 🔄 CI/CD Integration
+### Vulnerability Management
 
-- Connect to multiple CI/CD platforms:
-  - GitLab CI/CD
-  - GitHub Actions
-  - Jenkins
-  - Azure DevOps
-  - CircleCI
-  - AWS CodePipeline
-- Monitor pipeline activities in real-time
-- Scan code, containers, and infrastructure
-- Enforce security gates based on policy
-
-### 🔎 Vulnerability Management
-
-- Detect and track security vulnerabilities
+- Detect and track security vulnerabilities across platforms
 - Normalize and deduplicate findings from multiple scanners
 - Prioritize issues based on severity and context
-- Track remediation progress
-- Provide actionable remediation guidance
+- Actionable remediation guidance
 
-### 👥 Multi-tenant Architecture
+### Compliance Automation
 
-- Support multiple organizations/teams
-- Isolate data and policies between tenants
-- Role-based access control
-- Customizable per-tenant configurations
-- Cross-tenant analytics for enterprise users
-
-### 🧠 AI-powered Analysis
-
-- Intelligent context analysis for vulnerabilities
-- Remediation suggestions with code examples
-- Risk prediction based on historical data
-- Automated severity adjustment based on context
-- Natural language explanations of security issues
-
-### 📊 Compliance Automation
-
-- Map security controls to compliance frameworks:
-  - SOC 2
-  - ISO 27001
-  - PCI DSS
-  - HIPAA
-  - GDPR
-  - Custom frameworks
+- Map security controls to compliance frameworks: SOC 2, ISO 27001, PCI DSS, HIPAA, GDPR
 - Automate evidence collection
 - Generate compliance reports
-- Track compliance status in real-time
 
 ---
 
-## 🏗️ Architecture
-
-PipeWarden follows a modern, scalable architecture:
+## Architecture
 
 ```
-┌───────────────────┐     ┌──────────────────┐     ┌───────────────────┐
-│                   │     │                  │     │                   │
-│  CI/CD Platforms  │◄────┤  PipeWarden API  │◄────┤  Web Dashboard   │
-│                   │     │                  │     │                   │
-└───────────────────┘     └──────────────────┘     └───────────────────┘
-         ▲                        ▲
-         │                        │
-         ▼                        ▼
-┌───────────────────┐     ┌──────────────────┐     ┌───────────────────┐
-│                   │     │                  │     │                   │
-│  Scanner Service  │◄────┤  Policy Engine   │◄────┤  AI Analysis      │
-│                   │     │                  │     │                   │
-└───────────────────┘     └──────────────────┘     └───────────────────┘
-                                   ▲
-                                   │
-                                   ▼
-                          ┌──────────────────┐
-                          │                  │
-                          │  Event System    │
-                          │                  │
-                          └──────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│                    Web Dashboard                         │
+│              (Embedded SPA at :8080)                     │
+└───────────────────────┬──────────────────────────────────┘
+                        │
+                        ▼
+┌──────────────────────────────────────────────────────────┐
+│                   PipeWarden API                         │
+│            REST endpoints + Connection Manager           │
+└──────┬──────────┬──────────┬─────────────────────────────┘
+       │          │          │
+       ▼          ▼          ▼
+┌──────────┐ ┌──────────┐ ┌──────────┐    ┌─────────────┐
+│  GitHub  │ │  GitLab  │ │Bitbucket │    │   SQLite    │
+│ Actions  │ │  CI/CD   │ │Pipelines │    │  (Storage)  │
+└──────────┘ └──────────┘ └──────────┘    └─────────────┘
+
+Provider Interface:
+  TestConnection()  - Verify credentials and connectivity
+  ListPipelines()   - List pipeline/workflow definitions
+  GetPipelineRun()  - Get details of a specific run
+  ListPipelineRuns()- List recent runs
+  TriggerPipeline() - Start a new pipeline run
 ```
 
-PipeWarden uses a modular, microservices-based architecture with the following components:
+### Key Components
 
-- **API Gateway**: Central entry point for all external interactions
-- **Web Dashboard**: React-based UI for management and monitoring
-- **Policy Engine**: Core component for security policy evaluation
-- **Scanner Service**: Integration with various security scanning tools
-- **Event System**: Asynchronous event processing for scalability
-- **AI Analysis**: Integration with AWS Bedrock for intelligent security analysis
+- **Integration Manager** - Thread-safe registry with concurrent connection testing
+- **Provider Interface** - Pluggable contract for adding new CI/CD platforms
+- **Storage Layer** - SQLite with WAL mode, auto-migration on first run
+- **Web Dashboard** - Embedded SPA served from Go binary (no separate build step)
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 
 - Go 1.21+
-- Docker and docker-compose
 - Git
-- PostgreSQL (for local development)
+- GCC (for SQLite CGO compilation)
 
 ### Quick Start
 
-1. **Clone the repository**
-
 ```bash
+# Clone
 git clone https://github.com/finsavvyai/pipewarden.git
 cd pipewarden
-```
 
-2. **Build and run with Docker**
-
-```bash
-docker-compose up -d
-```
-
-3. **Or build and run locally**
-
-```bash
+# Build and run
 make build
 ./bin/pipewarden
+
+# Or run directly
+make run
 ```
 
-4. **Visit the dashboard**
+Open http://localhost:8080 to access the dashboard.
 
-Open your browser and navigate to http://localhost:8080
+### Add Your First Connection
 
-### Initial Setup
-
-After starting PipeWarden for the first time:
-
-1. Create an admin account using the setup wizard
-2. Configure your first integration with a CI/CD platform
-3. Set up your initial security policies or import templates
+1. Open the dashboard at http://localhost:8080
+2. Click **"+ Add Connection"**
+3. Select a platform (GitHub, GitLab, or Bitbucket)
+4. Enter a name and credentials
+5. Click **"Add Connection"**
+6. Click **"Test"** to verify connectivity
 
 ---
 
-## ⚙️ Configuration
+## Web Dashboard
 
-PipeWarden can be configured through environment variables, configuration files, or command-line flags.
+The dashboard is embedded in the Go binary and served at the root URL.
 
-### Environment Variables
+### Features
 
-Key environment variables include:
+- **Stats Overview** - Total connections + per-platform counts
+- **Connection Cards** - Name, platform, status with colored indicators
+- **Add Modal** - Platform-specific credential forms
+- **Test Individual** - Test a single connection on demand
+- **Test All** - Concurrent testing of every connection
+- **Remove** - Delete from both memory and database
 
+### Status Indicators
+
+| Indicator | Meaning |
+|-----------|---------|
+| Green dot | Connected successfully |
+| Red dot | Connection failed |
+| Yellow dot (pulsing) | Currently testing |
+| Gray dot | Not yet tested |
+
+---
+
+## Integrations
+
+### GitHub Actions
+
+```bash
+# Via dashboard: Platform = GitHub, Token = ghp_xxx
+# Supports GitHub Enterprise: set Base URL to https://github.example.com/api/v3
 ```
-PIPEWARDEN_ENVIRONMENT=development
-PIPEWARDEN_SERVER_PORT=8080
-PIPEWARDEN_DATABASE_HOST=localhost
-PIPEWARDEN_DATABASE_PORT=5432
-PIPEWARDEN_DATABASE_NAME=pipewarden
-PIPEWARDEN_LOGGING_LEVEL=info
+
+Features: workflow listing, run management, dispatch triggers, OAuth scope detection, rate limit monitoring.
+
+### GitLab CI/CD
+
+```bash
+# Via dashboard: Platform = GitLab, Token = glpat-xxx
+# Self-hosted: set Base URL to https://gitlab.example.com/api/v4
 ```
 
-### Configuration File
+Features: pipeline CRUD, trigger by ref, token scope parsing, rate limit detection.
 
-Example `config.yaml`:
+### Bitbucket Pipelines
+
+```bash
+# Via dashboard: Platform = Bitbucket, Username + App Password
+```
+
+Features: pipeline listing, run management, branch-based triggers.
+
+### Adding a New Platform
+
+Implement the `Provider` interface in `internal/integrations/`:
+
+```go
+type Provider interface {
+    Name() Platform
+    TestConnection(ctx context.Context) (*ConnectionStatus, error)
+    ListPipelines(ctx context.Context, owner, repo string) ([]Pipeline, error)
+    GetPipelineRun(ctx context.Context, owner, repo, runID string) (*PipelineRun, error)
+    ListPipelineRuns(ctx context.Context, owner, repo string, limit int) ([]PipelineRun, error)
+    TriggerPipeline(ctx context.Context, owner, repo, workflow, branch string) (*PipelineRun, error)
+}
+```
+
+---
+
+## API Reference
+
+All connections are managed via REST API. The dashboard uses these same endpoints.
+
+### Connections
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/v1/connections` | List all connections |
+| `POST` | `/api/v1/connections` | Add a new connection |
+| `GET` | `/api/v1/connections/{name}` | Get connection details |
+| `DELETE` | `/api/v1/connections/{name}` | Remove a connection |
+| `POST` | `/api/v1/connections/{name}/test` | Test a single connection |
+| `POST` | `/api/v1/connections/test` | Test all connections |
+
+### Examples
+
+```bash
+# Add a GitHub connection
+curl -X POST http://localhost:8080/api/v1/connections \
+  -H "Content-Type: application/json" \
+  -d '{"name":"github-main","platform":"github","token":"ghp_xxx"}'
+
+# Add a GitLab connection (self-hosted)
+curl -X POST http://localhost:8080/api/v1/connections \
+  -H "Content-Type: application/json" \
+  -d '{"name":"gitlab-internal","platform":"gitlab","token":"glpat-xxx","base_url":"https://gitlab.example.com/api/v4"}'
+
+# Add a Bitbucket connection
+curl -X POST http://localhost:8080/api/v1/connections \
+  -H "Content-Type: application/json" \
+  -d '{"name":"bb-team","platform":"bitbucket","username":"user","app_password":"xxx"}'
+
+# Test all connections
+curl -X POST http://localhost:8080/api/v1/connections/test
+
+# Test a specific connection
+curl -X POST http://localhost:8080/api/v1/connections/github-main/test
+
+# List all connections
+curl http://localhost:8080/api/v1/connections
+
+# Remove a connection
+curl -X DELETE http://localhost:8080/api/v1/connections/github-main
+```
+
+### Other Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/health` | Health check |
+| `GET` | `/` | Web dashboard |
+
+---
+
+## Configuration
+
+### Config File
 
 ```yaml
 environment: development
@@ -221,218 +296,164 @@ server:
   writeTimeout: 10s
   idleTimeout: 120s
 database:
-  host: localhost
-  port: 5432
-  username: postgres
-  password: postgres
-  name: pipewarden
-  sslMode: disable
+  path: pipewarden.db    # SQLite file path
 auth:
   jwtSecret: "your-secret-key-here"
   tokenDuration: 24h
 logging:
-  level: debug
-  json: false
+  level: debug            # debug, info, warn, error
+  json: false             # true for structured JSON logs
 ```
 
-See [Configuration Guide](docs/configuration.md) for a complete reference.
+### Environment Variables
+
+All config values can be set via environment variables with the `PIPEWARDEN_` prefix:
+
+```bash
+PIPEWARDEN_SERVER_PORT=8080
+PIPEWARDEN_DATABASE_PATH=pipewarden.db
+PIPEWARDEN_LOGGING_LEVEL=info
+PIPEWARDEN_LOGGING_JSON=true
+```
+
+### Command Line Flags
+
+```bash
+./bin/pipewarden --config configs/development/config.yml --db /data/pipewarden.db
+```
 
 ---
 
-## 💻 Development
+## Development
 
 ### Project Structure
 
 ```
-├── api/            # API definitions and handlers
-├── cmd/            # Application entry points
-├── configs/        # Configuration files
-├── docs/           # Documentation
-├── internal/       # Private application code
-│   ├── auth/       # Authentication and authorization
-│   ├── config/     # Configuration management
-│   ├── database/   # Database access
-│   ├── errors/     # Error handling
-│   ├── logging/    # Logging framework
-│   ├── policy/     # Policy engine
-│   ├── scanner/    # Scanner integration
-│   └── server/     # HTTP server
-├── pkg/            # Public packages
-│   ├── models/     # Data models
-│   └── utils/      # Utilities
-├── scripts/        # Utility scripts
-├── tests/          # Integration and E2E tests
-└── web/            # Frontend assets
+pipewarden/
+├── cmd/
+│   ├── pipewarden/          # Main application entry point
+│   └── testconnections/     # CLI connection tester
+├── configs/
+│   └── development/
+│       └── config.yml       # Dev configuration
+├── internal/
+│   ├── config/              # Configuration management (Viper)
+│   ├── errors/              # Custom error types
+│   ├── integrations/        # Provider interface + manager
+│   │   ├── github/          # GitHub Actions client
+│   │   ├── gitlab/          # GitLab CI/CD client
+│   │   └── bitbucket/       # Bitbucket Pipelines client
+│   ├── logging/             # Structured logging (Zap)
+│   ├── storage/             # SQLite persistence layer
+│   └── web/
+│       └── static/          # Embedded dashboard HTML/CSS/JS
+├── Makefile
+├── go.mod
+└── go.sum
 ```
 
-### Development Workflow
-
-1. **Set up your local environment**
+### Makefile Targets
 
 ```bash
-# Install dependencies
-make setup
-
-# Generate mocks
-make mocks
+make build             # Build binary to bin/pipewarden
+make run               # Run the application
+make test              # Run all tests
+make test-connections   # Test real API connections (requires tokens)
+make test-integration   # Run integration tests against real APIs
+make lint              # Run golangci-lint
+make clean             # Remove build artifacts
+make mocks             # Generate mocks
 ```
 
-2. **Run the application in development mode**
+---
+
+## Testing
+
+### Unit Tests (67 tests)
 
 ```bash
-make run
-```
-
-3. **Run tests**
-
-```bash
-# Run all tests
 make test
-
-# Run tests with coverage
-make test-coverage
 ```
 
-4. **Lint code**
+| Package | Tests | Description |
+|---------|-------|-------------|
+| `integrations` | 21 | Manager: CRUD, multi-connection, concurrent testing |
+| `integrations/github` | 12 | GitHub client: auth, CRUD, status mapping, scopes |
+| `integrations/gitlab` | 12 | GitLab client: auth, CRUD, status mapping, scopes |
+| `integrations/bitbucket` | 11 | Bitbucket client: auth, CRUD, status mapping |
+| `storage` | 12 | SQLite: CRUD, persistence, duplicates, file creation |
+
+### Integration Tests (Real APIs)
 
 ```bash
-make lint
+# Test GitHub connection
+GITHUB_TOKEN=ghp_xxx make test-integration
+
+# Test all platforms
+GITHUB_TOKEN=ghp_xxx GITLAB_TOKEN=glpat-xxx \
+  BITBUCKET_USERNAME=user BITBUCKET_APP_PASSWORD=pass \
+  make test-integration
+
+# With pipeline listing
+GITHUB_TOKEN=ghp_xxx GITHUB_TEST_OWNER=myorg GITHUB_TEST_REPO=myrepo \
+  make test-integration
 ```
 
-### Debugging
-
-PipeWarden supports various debugging options:
-
-- Set `PIPEWARDEN_LOGGING_LEVEL=debug` for verbose logging
-- Use the `/debug/pprof` endpoint in development mode
-- Enable tracing with `PIPEWARDEN_TRACING_ENABLED=true`
-
----
-
-## 📦 Deployment
-
-### Docker Deployment
-
-PipeWarden can be deployed using Docker:
+### CLI Connection Tester
 
 ```bash
-docker run -p 8080:8080 -e PIPEWARDEN_DATABASE_HOST=your-db-host finsavvyai/pipewarden
+# Test multiple connections
+GITHUB_TOKEN=ghp_abc GITHUB_NAME=gh-org-a \
+  GITHUB_TOKEN_2=ghp_def GITHUB_NAME_2=gh-enterprise \
+  GITLAB_TOKEN=glpat-xyz GITLAB_NAME=gl-cloud \
+  make test-connections
 ```
-
-### Kubernetes Deployment
-
-See [Kubernetes Deployment Guide](docs/kubernetes.md) for details on deploying to Kubernetes.
-
-### AWS Marketplace
-
-PipeWarden is available on AWS Marketplace for easy deployment on AWS:
-
-1. Subscribe to PipeWarden on AWS Marketplace
-2. Launch using CloudFormation templates
-3. Configure using the setup wizard
 
 ---
 
-## 📚 API Documentation
+## Deployment
 
-PipeWarden provides a RESTful API for integration with other systems.
-
-API documentation is available at `/api/docs` when running the application, or see [API Documentation](docs/api.md).
-
-### Example API Usage
+### Docker
 
 ```bash
-# Authenticate and get token
-curl -X POST http://localhost:8080/api/v1/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"password"}'
-
-# Use token to get policies
-curl -X GET http://localhost:8080/api/v1/policies \
-  -H "Authorization: Bearer YOUR_TOKEN"
+docker build -t pipewarden .
+docker run -p 8080:8080 -v /data:/data pipewarden --db /data/pipewarden.db
 ```
 
----
+### Production Recommendations
 
-## 🔌 Integrations
-
-PipeWarden integrates with various CI/CD platforms and security tools:
-
-### CI/CD Platforms
-
-- GitLab CI/CD
-- GitHub Actions
-- Jenkins
-- Azure DevOps
-- CircleCI
-- AWS CodePipeline
-
-### Security Scanners
-
-- Trivy
-- SonarQube
-- OWASP ZAP
-- Snyk
-- Checkmarx
-- Veracode
-
-### Notification Systems
-
-- Email
-- Slack
-- Microsoft Teams
-- Webhooks
-
-See [Integration Guide](docs/integrations.md) for setup instructions.
+- Set `PIPEWARDEN_LOGGING_JSON=true` for structured log output
+- Mount a persistent volume for the SQLite database
+- Use `PIPEWARDEN_AUTH_JWTSECRET` with a strong secret
+- Set `PIPEWARDEN_ENVIRONMENT=production`
 
 ---
 
-## ❓ FAQ
+## Roadmap
 
-### How does PipeWarden compare to other security tools?
-
-PipeWarden differentiates itself by focusing on cross-platform pipeline orchestration rather than being a scanner itself. It integrates with your existing security tools while providing centralized policy management and enforcement.
-
-### Can I use PipeWarden with my existing CI/CD setup?
-
-Yes, PipeWarden is designed to integrate with various CI/CD platforms without requiring you to change your existing workflows.
-
-### How does licensing work?
-
-PipeWarden uses a subscription model based on the number of pipelines you want to monitor. See our [pricing page](https://pipewarden.io/pricing) for details.
-
-### Is my data secure?
-
-Yes, PipeWarden uses tenant isolation to ensure that your data remains private. We do not store your source code, only metadata about security findings.
+- **Q2 2025**: Jenkins and Azure DevOps integrations
+- **Q3 2025**: Security scanner integrations (Trivy, Snyk, SonarQube)
+- **Q4 2025**: Policy engine with automated enforcement
+- **Q1 2026**: AI-powered vulnerability analysis and remediation
+- **Q2 2026**: Compliance reporting and audit trails
 
 ---
 
-## 🗺️ Roadmap
+## Contributing
 
-Our planned features include:
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
-- **Q2 2025**: Add support for additional CI/CD platforms
-- **Q3 2025**: Enhanced compliance reporting with more frameworks
-- **Q4 2025**: Advanced AI capabilities for proactive security insights
-- **Q1 2026**: Extended API and SDK for custom integrations
+### Adding a New CI/CD Platform
 
----
-
-## 👨‍💻 Contributing
-
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details on how to contribute.
-
-### Development Environment
-
-See the [Development](#development) section for details on setting up your development environment.
-
-### Code of Conduct
-
-Please read our [Code of Conduct](CODE_OF_CONDUCT.md) before contributing.
+1. Create a new package under `internal/integrations/yourplatform/`
+2. Implement the `Provider` interface
+3. Add the platform constant to `integration.go`
+4. Register the provider in `cmd/pipewarden/main.go`
+5. Write tests using `net/http/httptest` mock servers
 
 ---
 
-## 📄 License
+## License
 
 PipeWarden is released under the MIT License. See [LICENSE](LICENSE) for details.
 
@@ -440,5 +461,5 @@ PipeWarden is released under the MIT License. See [LICENSE](LICENSE) for details
 
 <div align="center">
   <p>PipeWarden - Break free from security vulnerabilities</p>
-  <p>Made with ❤️ by FinSavvy AI</p>
+  <p>Made with care by <a href="https://pipewarden.io">FinSavvy AI</a></p>
 </div>
