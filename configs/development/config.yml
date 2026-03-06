@@ -5,15 +5,13 @@ server:
   writeTimeout: 10s
   idleTimeout: 120s
 database:
-  host: localhost
-  port: 5432
-  username: postgres
-  password: postgres
-  name: pipewarden
-  sslMode: disable
+  path: pipewarden.db
 auth:
   jwtSecret: "your-secret-key-here"
   tokenDuration: 24h
 logging:
   level: debug
   json: false
+
+# Connections are managed via the web dashboard at http://localhost:8080
+# or the REST API: POST /api/v1/connections

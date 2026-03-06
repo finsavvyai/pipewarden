@@ -15,6 +15,25 @@ type Config struct {
 	Database    DatabaseConfig
 	Auth        AuthConfig
 	Logging     LoggingConfig
+	Anthropic   AnthropicConfig
+}
+
+// AnthropicConfig holds Claude API configuration
+type AnthropicConfig struct {
+	APIKey  string
+	Model   string
+	BaseURL string
+}
+
+// DatabaseConfig holds all database related configuration
+type DatabaseConfig struct {
+	Path     string // SQLite file path (default: pipewarden.db)
+	Host     string
+	Port     int
+	Username string
+	Password string
+	Name     string
+	SSLMode  string
 }
 
 // ServerConfig holds all server related configuration
@@ -23,16 +42,6 @@ type ServerConfig struct {
 	ReadTimeout  time.Duration
 	WriteTimeout time.Duration
 	IdleTimeout  time.Duration
-}
-
-// DatabaseConfig holds all database related configuration
-type DatabaseConfig struct {
-	Host     string
-	Port     int
-	Username string
-	Password string
-	Name     string
-	SSLMode  string
 }
 
 // AuthConfig holds all auth related configuration
