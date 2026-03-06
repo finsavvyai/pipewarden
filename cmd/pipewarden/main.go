@@ -19,10 +19,13 @@ import (
 	"github.com/finsavvyai/pipewarden/internal/integrations/github"
 	"github.com/finsavvyai/pipewarden/internal/integrations/gitlab"
 	"github.com/finsavvyai/pipewarden/internal/logging"
+	"github.com/finsavvyai/pipewarden/internal/storage"
+	"github.com/finsavvyai/pipewarden/internal/web"
 )
 
 func main() {
 	configPath := flag.String("config", "", "path to config file")
+	dbPath := flag.String("db", "pipewarden.db", "path to SQLite database")
 	flag.Parse()
 
 	cfg, err := config.LoadConfig(*configPath)
@@ -36,53 +39,64 @@ func main() {
 	}
 	defer logger.Sync()
 
+	// Open database
+	db, err := storage.New(*dbPath)
+	if err != nil {
+		log.Fatalf("Failed to open database: %v", err)
+	}
+	defer db.Close()
+
 	logger.Infow("Starting PipeWarden",
 		"environment", cfg.Environment,
 		"port", cfg.Server.Port,
+		"database", *dbPath,
 	)
 
-	// Setup integration manager and load connections from config
+	// Setup integration manager and load connections from DB
 	manager := integrations.NewManager(logger)
-	for _, conn := range cfg.Connections {
-		provider := buildProvider(conn, logger)
-		if provider == nil {
-			logger.Errorw("Unknown platform in config, skipping", "name", conn.Name, "platform", conn.Platform)
-			continue
-		}
-		if err := manager.Add(conn.Name, provider); err != nil {
-			logger.Errorw("Failed to add connection", "name", conn.Name, "error", err)
-		}
-	}
-	logger.Infow("Connections loaded from config", "count", manager.Count())
+	loadConnectionsFromDB(db, manager, logger)
 
 	// Setup HTTP server
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("Welcome to PipeWarden!"))
+
+	// Serve dashboard UI
+	mux.Handle("/static/", web.DashboardHandler())
+	mux.HandleFunc("/dashboard", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/static/index.html", http.StatusFound)
 	})
+
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" {
+			http.Redirect(w, r, "/static/index.html", http.StatusFound)
+			return
+		}
+		http.NotFound(w, r)
+	})
+
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
 
-	// List all connections
+	// List all connections / Add connection
 	mux.HandleFunc("/api/v1/connections", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			conns := manager.List()
+			records, err := db.List()
+			if err != nil {
+				jsonError(w, "failed to list connections", http.StatusInternalServerError)
+				return
+			}
 			type connInfo struct {
-				Name     string              `json:"name"`
-				Platform integrations.Platform `json:"platform"`
+				Name     string `json:"name"`
+				Platform string `json:"platform"`
+				BaseURL  string `json:"base_url,omitempty"`
 			}
-			out := make([]connInfo, len(conns))
-			for i, c := range conns {
-				out[i] = connInfo{Name: c.Name, Platform: c.Platform}
+			out := make([]connInfo, len(records))
+			for i, r := range records {
+				out[i] = connInfo{Name: r.Name, Platform: r.Platform, BaseURL: r.BaseURL}
 			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"connections": out,
-				"count":       len(out),
-			})
+			jsonOK(w, map[string]interface{}{"connections": out, "count": len(out)})
 
 		case http.MethodPost:
 			var req struct {
@@ -94,38 +108,46 @@ func main() {
 				BaseURL     string `json:"base_url"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				http.Error(w, `{"error":"invalid JSON"}`, http.StatusBadRequest)
+				jsonError(w, "invalid JSON", http.StatusBadRequest)
 				return
 			}
 			if req.Name == "" || req.Platform == "" {
-				http.Error(w, `{"error":"name and platform are required"}`, http.StatusBadRequest)
+				jsonError(w, "name and platform are required", http.StatusBadRequest)
 				return
 			}
 
-			provider := buildProvider(config.ConnectionConfig{
+			provider := buildProvider(req.Platform, req.Token, req.Username, req.AppPassword, req.BaseURL, logger)
+			if provider == nil {
+				jsonError(w, "unsupported platform: "+req.Platform, http.StatusBadRequest)
+				return
+			}
+
+			// Persist to DB
+			rec := &storage.ConnectionRecord{
 				Name:        req.Name,
 				Platform:    req.Platform,
 				Token:       req.Token,
 				Username:    req.Username,
 				AppPassword: req.AppPassword,
 				BaseURL:     req.BaseURL,
-			}, logger)
-			if provider == nil {
-				http.Error(w, `{"error":"unsupported platform"}`, http.StatusBadRequest)
+			}
+			if err := db.Create(rec); err != nil {
+				jsonError(w, err.Error(), http.StatusConflict)
 				return
 			}
 
+			// Register in memory
 			if err := manager.Add(req.Name, provider); err != nil {
-				http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusConflict)
+				// DB succeeded but manager failed (shouldn't happen), rollback
+				db.Delete(req.Name)
+				jsonError(w, err.Error(), http.StatusConflict)
 				return
 			}
 
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusCreated)
 			json.NewEncoder(w).Encode(map[string]string{
-				"name":     req.Name,
-				"platform": req.Platform,
-				"status":   "added",
+				"name": req.Name, "platform": req.Platform, "status": "added",
 			})
 
 		default:
@@ -133,14 +155,25 @@ func main() {
 		}
 	})
 
-	// Single connection operations: GET (info), DELETE (remove), POST /test (test)
+	// Test all connections at once — must be registered BEFORE the /{name} catch-all
+	mux.HandleFunc("/api/v1/connections/test", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		defer cancel()
+		jsonOK(w, manager.TestAllConnections(ctx))
+	})
+
+	// Single connection: GET, DELETE, POST test
 	mux.HandleFunc("/api/v1/connections/", func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/api/v1/connections/")
 		parts := strings.SplitN(path, "/", 2)
 		name := parts[0]
-
-		if name == "" {
-			http.Error(w, `{"error":"connection name required"}`, http.StatusBadRequest)
+		if name == "" || name == "test" {
+			// Already handled by the /test route above; avoid conflict
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
@@ -155,56 +188,35 @@ func main() {
 
 			status, err := manager.TestConnection(ctx, name)
 			if err != nil {
-				http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusNotFound)
+				jsonError(w, err.Error(), http.StatusNotFound)
 				return
 			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(status)
+			jsonOK(w, status)
 			return
 		}
 
-		// /api/v1/connections/{name}
 		switch r.Method {
 		case http.MethodGet:
 			conn, err := manager.Get(name)
 			if err != nil {
-				http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusNotFound)
+				jsonError(w, err.Error(), http.StatusNotFound)
 				return
 			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]string{
-				"name":     conn.Name,
-				"platform": string(conn.Platform),
-			})
+			jsonOK(w, map[string]string{"name": conn.Name, "platform": string(conn.Platform)})
 
 		case http.MethodDelete:
-			if err := manager.Remove(name); err != nil {
-				http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusNotFound)
+			// Remove from DB
+			if err := db.Delete(name); err != nil {
+				jsonError(w, err.Error(), http.StatusNotFound)
 				return
 			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]string{
-				"name":   name,
-				"status": "removed",
-			})
+			// Remove from memory
+			manager.Remove(name)
+			jsonOK(w, map[string]string{"name": name, "status": "removed"})
 
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
-	})
-
-	// Test all connections at once
-	mux.HandleFunc("/api/v1/connections/test", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-		defer cancel()
-
-		results := manager.TestAllConnections(ctx)
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(results)
 	})
 
 	server := &http.Server{
@@ -216,6 +228,7 @@ func main() {
 	}
 
 	go func() {
+		logger.Infow("Dashboard available at", "url", fmt.Sprintf("http://localhost:%d", cfg.Server.Port))
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Fatalw("Failed to start server", "error", err)
 		}
@@ -234,26 +247,45 @@ func main() {
 	logger.Info("Server gracefully stopped")
 }
 
-// buildProvider creates a Provider from a ConnectionConfig.
-func buildProvider(conn config.ConnectionConfig, logger *logging.Logger) integrations.Provider {
-	switch integrations.Platform(conn.Platform) {
+func loadConnectionsFromDB(db *storage.DB, manager *integrations.Manager, logger *logging.Logger) {
+	records, err := db.List()
+	if err != nil {
+		logger.Errorw("Failed to load connections from DB", "error", err)
+		return
+	}
+	for _, rec := range records {
+		provider := buildProvider(rec.Platform, rec.Token, rec.Username, rec.AppPassword, rec.BaseURL, logger)
+		if provider == nil {
+			logger.Errorw("Unknown platform in DB, skipping", "name", rec.Name, "platform", rec.Platform)
+			continue
+		}
+		if err := manager.Add(rec.Name, provider); err != nil {
+			logger.Errorw("Failed to load connection", "name", rec.Name, "error", err)
+		}
+	}
+	logger.Infow("Connections loaded from database", "count", len(records))
+}
+
+func buildProvider(platform, token, username, appPassword, baseURL string, logger *logging.Logger) integrations.Provider {
+	switch integrations.Platform(platform) {
 	case integrations.PlatformGitHub:
-		return github.NewClient(github.Config{
-			Token:   conn.Token,
-			BaseURL: conn.BaseURL,
-		}, logger)
+		return github.NewClient(github.Config{Token: token, BaseURL: baseURL}, logger)
 	case integrations.PlatformBitbucket:
-		return bitbucket.NewClient(bitbucket.Config{
-			Username:    conn.Username,
-			AppPassword: conn.AppPassword,
-			BaseURL:     conn.BaseURL,
-		}, logger)
+		return bitbucket.NewClient(bitbucket.Config{Username: username, AppPassword: appPassword, BaseURL: baseURL}, logger)
 	case integrations.PlatformGitLab:
-		return gitlab.NewClient(gitlab.Config{
-			Token:   conn.Token,
-			BaseURL: conn.BaseURL,
-		}, logger)
+		return gitlab.NewClient(gitlab.Config{Token: token, BaseURL: baseURL}, logger)
 	default:
 		return nil
 	}
+}
+
+func jsonOK(w http.ResponseWriter, data interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(data)
+}
+
+func jsonError(w http.ResponseWriter, msg string, code int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }

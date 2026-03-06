@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PipeWarden — Connection Manager</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --border: #2a2d3a;
+      --text: #e1e4eb;
+      --muted: #8b8fa3;
+      --accent: #6366f1;
+      --accent-hover: #818cf8;
+      --green: #22c55e;
+      --red: #ef4444;
+      --yellow: #eab308;
+      --radius: 8px;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    .header {
+      border-bottom: 1px solid var(--border);
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .header h1 { font-size: 20px; font-weight: 600; }
+    .header h1 span { color: var(--accent); }
+    .header-actions { display: flex; gap: 8px; }
+    .container { max-width: 960px; margin: 0 auto; padding: 24px; }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      text-align: center;
+    }
+    .stat-card .value { font-size: 28px; font-weight: 700; }
+    .stat-card .label { font-size: 12px; color: var(--muted); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .btn {
+      padding: 8px 16px;
+      border: none;
+      border-radius: var(--radius);
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      transition: all 0.15s;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-danger { background: transparent; color: var(--red); border: 1px solid var(--red); }
+    .btn-danger:hover { background: var(--red); color: #fff; }
+    .btn-outline { background: transparent; color: var(--text); border: 1px solid var(--border); }
+    .btn-outline:hover { border-color: var(--accent); color: var(--accent); }
+    .btn-sm { padding: 5px 10px; font-size: 12px; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .connections-list { display: flex; flex-direction: column; gap: 8px; }
+    .conn-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      transition: border-color 0.15s;
+    }
+    .conn-card:hover { border-color: var(--accent); }
+    .conn-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: var(--radius);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .conn-icon.github { background: #1f2937; color: #f9fafb; }
+    .conn-icon.gitlab { background: #1f1030; color: #fc6d26; }
+    .conn-icon.bitbucket { background: #0f1f3d; color: #2684ff; }
+    .conn-info { flex: 1; min-width: 0; }
+    .conn-name { font-weight: 600; font-size: 14px; }
+    .conn-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .conn-actions { display: flex; gap: 6px; flex-shrink: 0; }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 6px;
+    }
+    .status-dot.ok { background: var(--green); }
+    .status-dot.fail { background: var(--red); }
+    .status-dot.pending { background: var(--yellow); animation: pulse 1s infinite; }
+    .status-dot.unknown { background: var(--muted); }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+    .modal-overlay.hidden { display: none; }
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      width: 440px;
+      max-width: 95vw;
+      padding: 24px;
+    }
+    .modal h2 { font-size: 18px; margin-bottom: 16px; }
+    .form-group { margin-bottom: 14px; }
+    .form-group label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .form-group input, .form-group select {
+      width: 100%;
+      padding: 10px 12px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-size: 14px;
+      outline: none;
+    }
+    .form-group input:focus, .form-group select:focus { border-color: var(--accent); }
+    .form-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
+    .platform-fields { display: none; }
+    .platform-fields.active { display: block; }
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--muted);
+    }
+    .empty-state h3 { font-size: 16px; color: var(--text); margin-bottom: 8px; }
+    .test-result {
+      margin-top: 8px;
+      padding: 8px 12px;
+      border-radius: var(--radius);
+      font-size: 12px;
+      display: none;
+    }
+    .test-result.show { display: block; }
+    .test-result.ok { background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.3); color: var(--green); }
+    .test-result.fail { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: var(--red); }
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+    .section-header h2 { font-size: 16px; }
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      padding: 12px 20px;
+      border-radius: var(--radius);
+      font-size: 13px;
+      z-index: 200;
+      animation: slideIn 0.3s;
+    }
+    .toast.success { background: var(--green); color: #fff; }
+    .toast.error { background: var(--red); color: #fff; }
+    @keyframes slideIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1><span>Pipe</span>Warden</h1>
+    <div class="header-actions">
+      <button class="btn btn-outline" onclick="testAll()">Test All</button>
+      <button class="btn btn-primary" onclick="showAddModal()">+ Add Connection</button>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="stats" id="stats">
+      <div class="stat-card"><div class="value" id="stat-total">-</div><div class="label">Total</div></div>
+      <div class="stat-card"><div class="value" id="stat-github">-</div><div class="label">GitHub</div></div>
+      <div class="stat-card"><div class="value" id="stat-gitlab">-</div><div class="label">GitLab</div></div>
+      <div class="stat-card"><div class="value" id="stat-bitbucket">-</div><div class="label">Bitbucket</div></div>
+    </div>
+
+    <div class="section-header">
+      <h2>Connections</h2>
+    </div>
+
+    <div id="connections-list" class="connections-list"></div>
+  </div>
+
+  <!-- Add Connection Modal -->
+  <div class="modal-overlay hidden" id="add-modal">
+    <div class="modal">
+      <h2>Add Connection</h2>
+      <form id="add-form" onsubmit="addConnection(event)">
+        <div class="form-group">
+          <label>Connection Name</label>
+          <input type="text" id="conn-name" placeholder="e.g. github-main" required>
+        </div>
+        <div class="form-group">
+          <label>Platform</label>
+          <select id="conn-platform" onchange="togglePlatformFields()">
+            <option value="github">GitHub Actions</option>
+            <option value="gitlab">GitLab CI/CD</option>
+            <option value="bitbucket">Bitbucket Pipelines</option>
+          </select>
+        </div>
+        <div id="fields-github" class="platform-fields active">
+          <div class="form-group">
+            <label>Personal Access Token</label>
+            <input type="password" id="gh-token" placeholder="ghp_xxx">
+          </div>
+          <div class="form-group">
+            <label>Base URL (optional)</label>
+            <input type="text" id="gh-base-url" placeholder="https://api.github.com">
+          </div>
+        </div>
+        <div id="fields-gitlab" class="platform-fields">
+          <div class="form-group">
+            <label>Access Token</label>
+            <input type="password" id="gl-token" placeholder="glpat-xxx">
+          </div>
+          <div class="form-group">
+            <label>Base URL (optional)</label>
+            <input type="text" id="gl-base-url" placeholder="https://gitlab.com/api/v4">
+          </div>
+        </div>
+        <div id="fields-bitbucket" class="platform-fields">
+          <div class="form-group">
+            <label>Username</label>
+            <input type="text" id="bb-username" placeholder="your-username">
+          </div>
+          <div class="form-group">
+            <label>App Password</label>
+            <input type="password" id="bb-app-password" placeholder="your-app-password">
+          </div>
+          <div class="form-group">
+            <label>Base URL (optional)</label>
+            <input type="text" id="bb-base-url" placeholder="https://api.bitbucket.org/2.0">
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-outline" onclick="closeAddModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Add Connection</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+<script>
+const API = '/api/v1/connections';
+let connectionStatuses = {};
+
+async function loadConnections() {
+  try {
+    const res = await fetch(API);
+    const data = await res.json();
+    renderConnections(data.connections || []);
+    updateStats(data.connections || []);
+  } catch (e) {
+    document.getElementById('connections-list').innerHTML =
+      '<div class="empty-state"><h3>Unable to reach API</h3><p>Check that PipeWarden is running.</p></div>';
+  }
+}
+
+function renderConnections(conns) {
+  const list = document.getElementById('connections-list');
+  if (conns.length === 0) {
+    list.innerHTML = '<div class="empty-state"><h3>No connections yet</h3><p>Add your first CI/CD connection to get started.</p></div>';
+    return;
+  }
+  list.innerHTML = conns.map(c => {
+    const st = connectionStatuses[c.name];
+    let statusHTML = '<span class="status-dot unknown"></span>Not tested';
+    if (st === 'testing') {
+      statusHTML = '<span class="status-dot pending"></span>Testing...';
+    } else if (st && st.connected) {
+      statusHTML = `<span class="status-dot ok"></span>Connected as ${st.user || 'unknown'} (${st.latency ? (st.latency/1e6).toFixed(0) + 'ms' : ''})`;
+    } else if (st && !st.connected) {
+      statusHTML = `<span class="status-dot fail"></span>${st.message || 'Failed'}`;
+    }
+    const icon = c.platform === 'github' ? 'GH' : c.platform === 'gitlab' ? 'GL' : 'BB';
+    return `
+      <div class="conn-card" id="card-${c.name}">
+        <div class="conn-icon ${c.platform}">${icon}</div>
+        <div class="conn-info">
+          <div class="conn-name">${esc(c.name)}</div>
+          <div class="conn-meta">${c.platform}${c.base_url ? ' &middot; ' + esc(c.base_url) : ''}</div>
+          <div class="conn-meta">${statusHTML}</div>
+        </div>
+        <div class="conn-actions">
+          <button class="btn btn-outline btn-sm" onclick="testOne('${esc(c.name)}')">Test</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteConn('${esc(c.name)}')">Remove</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function updateStats(conns) {
+  document.getElementById('stat-total').textContent = conns.length;
+  document.getElementById('stat-github').textContent = conns.filter(c => c.platform === 'github').length;
+  document.getElementById('stat-gitlab').textContent = conns.filter(c => c.platform === 'gitlab').length;
+  document.getElementById('stat-bitbucket').textContent = conns.filter(c => c.platform === 'bitbucket').length;
+}
+
+async function addConnection(e) {
+  e.preventDefault();
+  const platform = document.getElementById('conn-platform').value;
+  const body = {
+    name: document.getElementById('conn-name').value,
+    platform: platform,
+  };
+  if (platform === 'github') {
+    body.token = document.getElementById('gh-token').value;
+    body.base_url = document.getElementById('gh-base-url').value;
+  } else if (platform === 'gitlab') {
+    body.token = document.getElementById('gl-token').value;
+    body.base_url = document.getElementById('gl-base-url').value;
+  } else {
+    body.username = document.getElementById('bb-username').value;
+    body.app_password = document.getElementById('bb-app-password').value;
+    body.base_url = document.getElementById('bb-base-url').value;
+  }
+
+  try {
+    const res = await fetch(API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      toast(err.error || 'Failed to add', 'error');
+      return;
+    }
+    toast('Connection added!', 'success');
+    closeAddModal();
+    document.getElementById('add-form').reset();
+    loadConnections();
+  } catch (e) {
+    toast('Network error', 'error');
+  }
+}
+
+async function deleteConn(name) {
+  if (!confirm(`Remove connection "${name}"?`)) return;
+  try {
+    const res = await fetch(`${API}/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    if (!res.ok) {
+      toast('Failed to remove', 'error');
+      return;
+    }
+    delete connectionStatuses[name];
+    toast('Connection removed', 'success');
+    loadConnections();
+  } catch (e) {
+    toast('Network error', 'error');
+  }
+}
+
+async function testOne(name) {
+  connectionStatuses[name] = 'testing';
+  loadConnections();
+  try {
+    const res = await fetch(`${API}/${encodeURIComponent(name)}/test`, { method: 'POST' });
+    const data = await res.json();
+    connectionStatuses[name] = data;
+  } catch (e) {
+    connectionStatuses[name] = { connected: false, message: 'Request failed' };
+  }
+  loadConnections();
+}
+
+async function testAll() {
+  const res0 = await fetch(API);
+  const data0 = await res0.json();
+  (data0.connections || []).forEach(c => { connectionStatuses[c.name] = 'testing'; });
+  loadConnections();
+
+  try {
+    const res = await fetch(`${API}/test`, { method: 'POST' });
+    const data = await res.json();
+    Object.assign(connectionStatuses, data);
+  } catch (e) {
+    toast('Test failed', 'error');
+  }
+  loadConnections();
+}
+
+function showAddModal() { document.getElementById('add-modal').classList.remove('hidden'); }
+function closeAddModal() { document.getElementById('add-modal').classList.add('hidden'); }
+function togglePlatformFields() {
+  document.querySelectorAll('.platform-fields').forEach(el => el.classList.remove('active'));
+  const p = document.getElementById('conn-platform').value;
+  document.getElementById('fields-' + p).classList.add('active');
+}
+
+function toast(msg, type) {
+  const el = document.createElement('div');
+  el.className = 'toast ' + type;
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 3000);
+}
+
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+document.getElementById('add-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeAddModal();
+});
+
+loadConnections();
+</script>
+</body>
+</html>

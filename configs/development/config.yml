@@ -5,12 +5,7 @@ server:
   writeTimeout: 10s
   idleTimeout: 120s
 database:
-  host: localhost
-  port: 5432
-  username: postgres
-  password: postgres
-  name: pipewarden
-  sslMode: disable
+  path: pipewarden.db
 auth:
   jwtSecret: "your-secret-key-here"
   tokenDuration: 24h
@@ -18,31 +13,5 @@ logging:
   level: debug
   json: false
 
-# connections is a list — add as many as you need per platform.
-# Each connection has a unique name, platform type, and credentials.
-connections:
-  # - name: "github-main"
-  #   platform: "github"
-  #   token: "ghp_xxx"
-  #   baseURL: "https://api.github.com"
-  #
-  # - name: "github-enterprise"
-  #   platform: "github"
-  #   token: "ghp_yyy"
-  #   baseURL: "https://github.mycompany.com/api/v3"
-  #
-  # - name: "gitlab-cloud"
-  #   platform: "gitlab"
-  #   token: "glpat-xxx"
-  #   baseURL: "https://gitlab.com/api/v4"
-  #
-  # - name: "gitlab-self-hosted"
-  #   platform: "gitlab"
-  #   token: "glpat-yyy"
-  #   baseURL: "https://gitlab.internal.com/api/v4"
-  #
-  # - name: "bitbucket-team"
-  #   platform: "bitbucket"
-  #   username: "myuser"
-  #   appPassword: "xxx"
-  #   baseURL: "https://api.bitbucket.org/2.0"
+# Connections are managed via the web dashboard at http://localhost:8080
+# or the REST API: POST /api/v1/connections

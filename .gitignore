@@ -25,3 +25,8 @@ vendor/
 
 # Config files that may contain secrets
 *.env
+
+# SQLite database files
+*.db
+*.db-wal
+*.db-shm

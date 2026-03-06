@@ -10,22 +10,22 @@ import (
 
 // Config holds all configuration for our application
 type Config struct {
-	Environment  string
-	Server       ServerConfig
-	Database     DatabaseConfig
-	Auth         AuthConfig
-	Logging      LoggingConfig
-	Connections  []ConnectionConfig
+	Environment string
+	Server      ServerConfig
+	Database    DatabaseConfig
+	Auth        AuthConfig
+	Logging     LoggingConfig
 }
 
-// ConnectionConfig holds the configuration for a single CI/CD connection.
-type ConnectionConfig struct {
-	Name        string `mapstructure:"name"`
-	Platform    string `mapstructure:"platform"` // github, bitbucket, gitlab
-	Token       string `mapstructure:"token"`
-	Username    string `mapstructure:"username"`
-	AppPassword string `mapstructure:"appPassword"`
-	BaseURL     string `mapstructure:"baseURL"`
+// DatabaseConfig holds all database related configuration
+type DatabaseConfig struct {
+	Path     string // SQLite file path (default: pipewarden.db)
+	Host     string
+	Port     int
+	Username string
+	Password string
+	Name     string
+	SSLMode  string
 }
 
 // ServerConfig holds all server related configuration
@@ -34,16 +34,6 @@ type ServerConfig struct {
 	ReadTimeout  time.Duration
 	WriteTimeout time.Duration
 	IdleTimeout  time.Duration
-}
-
-// DatabaseConfig holds all database related configuration
-type DatabaseConfig struct {
-	Host     string
-	Port     int
-	Username string
-	Password string
-	Name     string
-	SSLMode  string
 }
 
 // AuthConfig holds all auth related configuration
