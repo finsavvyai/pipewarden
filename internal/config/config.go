@@ -15,6 +15,14 @@ type Config struct {
 	Database    DatabaseConfig
 	Auth        AuthConfig
 	Logging     LoggingConfig
+	Anthropic   AnthropicConfig
+}
+
+// AnthropicConfig holds Claude API configuration
+type AnthropicConfig struct {
+	APIKey  string
+	Model   string
+	BaseURL string
 }
 
 // DatabaseConfig holds all database related configuration

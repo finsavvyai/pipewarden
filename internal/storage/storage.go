@@ -60,6 +60,40 @@ func (s *DB) migrate() error {
 	);
 	CREATE INDEX IF NOT EXISTS idx_connections_platform ON connections(platform);
 	CREATE INDEX IF NOT EXISTS idx_connections_name ON connections(name);
+
+	CREATE TABLE IF NOT EXISTS security_findings (
+		id              INTEGER PRIMARY KEY AUTOINCREMENT,
+		connection_name TEXT NOT NULL,
+		run_id          TEXT NOT NULL,
+		severity        TEXT NOT NULL,
+		category        TEXT NOT NULL,
+		title           TEXT NOT NULL,
+		description     TEXT NOT NULL,
+		remediation     TEXT NOT NULL DEFAULT '',
+		file            TEXT NOT NULL DEFAULT '',
+		line            INTEGER NOT NULL DEFAULT 0,
+		confidence      REAL NOT NULL DEFAULT 0.0,
+		false_positive  INTEGER NOT NULL DEFAULT 0,
+		status          TEXT NOT NULL DEFAULT 'open',
+		created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	);
+	CREATE INDEX IF NOT EXISTS idx_findings_connection ON security_findings(connection_name);
+	CREATE INDEX IF NOT EXISTS idx_findings_run ON security_findings(run_id);
+	CREATE INDEX IF NOT EXISTS idx_findings_severity ON security_findings(severity);
+
+	CREATE TABLE IF NOT EXISTS analysis_history (
+		id              INTEGER PRIMARY KEY AUTOINCREMENT,
+		connection_name TEXT NOT NULL,
+		run_id          TEXT NOT NULL,
+		summary         TEXT NOT NULL,
+		risk_score      INTEGER NOT NULL DEFAULT 0,
+		findings_count  INTEGER NOT NULL DEFAULT 0,
+		tokens_used     INTEGER NOT NULL DEFAULT 0,
+		model           TEXT NOT NULL,
+		duration_ms     INTEGER NOT NULL DEFAULT 0,
+		analyzed_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	);
+	CREATE INDEX IF NOT EXISTS idx_history_connection ON analysis_history(connection_name);
 	`
 	_, err := s.db.Exec(query)
 	return err
@@ -173,6 +207,130 @@ func (s *DB) Count() (int, error) {
 	var count int
 	err := s.db.QueryRow(`SELECT COUNT(*) FROM connections`).Scan(&count)
 	return count, err
+}
+
+// FindingRecord represents a persisted security finding.
+type FindingRecord struct {
+	ID             int64     `json:"id"`
+	ConnectionName string    `json:"connection_name"`
+	RunID          string    `json:"run_id"`
+	Severity       string    `json:"severity"`
+	Category       string    `json:"category"`
+	Title          string    `json:"title"`
+	Description    string    `json:"description"`
+	Remediation    string    `json:"remediation"`
+	File           string    `json:"file,omitempty"`
+	Line           int       `json:"line,omitempty"`
+	Confidence     float64   `json:"confidence"`
+	FalsePositive  bool      `json:"false_positive"`
+	Status         string    `json:"status"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
+// AnalysisRecord represents a persisted analysis run.
+type AnalysisRecord struct {
+	ID             int64     `json:"id"`
+	ConnectionName string    `json:"connection_name"`
+	RunID          string    `json:"run_id"`
+	Summary        string    `json:"summary"`
+	RiskScore      int       `json:"risk_score"`
+	FindingsCount  int       `json:"findings_count"`
+	TokensUsed     int       `json:"tokens_used"`
+	Model          string    `json:"model"`
+	DurationMS     int64     `json:"duration_ms"`
+	AnalyzedAt     time.Time `json:"analyzed_at"`
+}
+
+// CreateFinding inserts a security finding.
+func (s *DB) CreateFinding(f *FindingRecord) error {
+	falsePos := 0
+	if f.FalsePositive {
+		falsePos = 1
+	}
+	result, err := s.db.Exec(
+		`INSERT INTO security_findings (connection_name, run_id, severity, category, title, description, remediation, file, line, confidence, false_positive, status, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		f.ConnectionName, f.RunID, f.Severity, f.Category, f.Title, f.Description, f.Remediation, f.File, f.Line, f.Confidence, falsePos, f.Status, time.Now().UTC(),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to insert finding: %w", err)
+	}
+	f.ID, _ = result.LastInsertId()
+	return nil
+}
+
+// ListFindings returns findings, optionally filtered by connection name.
+func (s *DB) ListFindings(connectionName string) ([]FindingRecord, error) {
+	var rows *sql.Rows
+	var err error
+	if connectionName != "" {
+		rows, err = s.db.Query(
+			`SELECT id, connection_name, run_id, severity, category, title, description, remediation, file, line, confidence, false_positive, status, created_at
+			 FROM security_findings WHERE connection_name = ? ORDER BY created_at DESC`, connectionName)
+	} else {
+		rows, err = s.db.Query(
+			`SELECT id, connection_name, run_id, severity, category, title, description, remediation, file, line, confidence, false_positive, status, created_at
+			 FROM security_findings ORDER BY created_at DESC`)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to list findings: %w", err)
+	}
+	defer rows.Close()
+
+	var findings []FindingRecord
+	for rows.Next() {
+		var f FindingRecord
+		var falsePos int
+		if err := rows.Scan(&f.ID, &f.ConnectionName, &f.RunID, &f.Severity, &f.Category, &f.Title, &f.Description, &f.Remediation, &f.File, &f.Line, &f.Confidence, &falsePos, &f.Status, &f.CreatedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan finding: %w", err)
+		}
+		f.FalsePositive = falsePos != 0
+		findings = append(findings, f)
+	}
+	return findings, rows.Err()
+}
+
+// CreateAnalysisRecord inserts an analysis history entry.
+func (s *DB) CreateAnalysisRecord(r *AnalysisRecord) error {
+	result, err := s.db.Exec(
+		`INSERT INTO analysis_history (connection_name, run_id, summary, risk_score, findings_count, tokens_used, model, duration_ms, analyzed_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		r.ConnectionName, r.RunID, r.Summary, r.RiskScore, r.FindingsCount, r.TokensUsed, r.Model, r.DurationMS, r.AnalyzedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to insert analysis record: %w", err)
+	}
+	r.ID, _ = result.LastInsertId()
+	return nil
+}
+
+// ListAnalysisHistory returns analysis history, optionally filtered by connection.
+func (s *DB) ListAnalysisHistory(connectionName string) ([]AnalysisRecord, error) {
+	var rows *sql.Rows
+	var err error
+	if connectionName != "" {
+		rows, err = s.db.Query(
+			`SELECT id, connection_name, run_id, summary, risk_score, findings_count, tokens_used, model, duration_ms, analyzed_at
+			 FROM analysis_history WHERE connection_name = ? ORDER BY analyzed_at DESC`, connectionName)
+	} else {
+		rows, err = s.db.Query(
+			`SELECT id, connection_name, run_id, summary, risk_score, findings_count, tokens_used, model, duration_ms, analyzed_at
+			 FROM analysis_history ORDER BY analyzed_at DESC`)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to list analysis history: %w", err)
+	}
+	defer rows.Close()
+
+	var records []AnalysisRecord
+	for rows.Next() {
+		var r AnalysisRecord
+		if err := rows.Scan(&r.ID, &r.ConnectionName, &r.RunID, &r.Summary, &r.RiskScore, &r.FindingsCount, &r.TokensUsed, &r.Model, &r.DurationMS, &r.AnalyzedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan analysis record: %w", err)
+		}
+		records = append(records, r)
+	}
+	return records, rows.Err()
 }
 
 // Close closes the database.

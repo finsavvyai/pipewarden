@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/finsavvyai/pipewarden/internal/analysis"
 	"github.com/finsavvyai/pipewarden/internal/config"
 	"github.com/finsavvyai/pipewarden/internal/integrations"
 	"github.com/finsavvyai/pipewarden/internal/integrations/bitbucket"
@@ -55,6 +56,16 @@ func main() {
 	// Setup integration manager and load connections from DB
 	manager := integrations.NewManager(logger)
 	loadConnectionsFromDB(db, manager, logger)
+
+	// Setup Claude security analyzer
+	analyzer := analysis.NewClaudeAnalyzer(analysis.ClaudeConfig{
+		APIKey:  cfg.Anthropic.APIKey,
+		Model:   cfg.Anthropic.Model,
+		BaseURL: cfg.Anthropic.BaseURL,
+	}, logger)
+	if analyzer.Enabled() {
+		logger.Infow("Claude security analysis enabled", "model", cfg.Anthropic.Model)
+	}
 
 	// Setup HTTP server
 	mux := http.NewServeMux()
@@ -217,6 +228,124 @@ func main() {
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
+	})
+
+	// Analysis: run on-demand analysis for a pipeline run
+	mux.HandleFunc("/api/v1/analysis/run", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !analyzer.Enabled() {
+			jsonError(w, "Claude API key not configured. Set PIPEWARDEN_ANTHROPIC_APIKEY", http.StatusServiceUnavailable)
+			return
+		}
+
+		var req analysis.AnalysisRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			jsonError(w, "invalid JSON", http.StatusBadRequest)
+			return
+		}
+		if req.ConnectionName == "" || req.Owner == "" || req.Repo == "" || req.RunID == "" {
+			jsonError(w, "connection_name, owner, repo, and run_id are required", http.StatusBadRequest)
+			return
+		}
+
+		conn, err := manager.Get(req.ConnectionName)
+		if err != nil {
+			jsonError(w, err.Error(), http.StatusNotFound)
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
+		defer cancel()
+
+		run, err := conn.Provider.GetPipelineRun(ctx, req.Owner, req.Repo, req.RunID)
+		if err != nil {
+			jsonError(w, fmt.Sprintf("failed to get pipeline run: %v", err), http.StatusBadGateway)
+			return
+		}
+
+		result, err := analyzer.AnalyzeRun(ctx, conn, run)
+		if err != nil {
+			jsonError(w, fmt.Sprintf("analysis failed: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		// Persist findings
+		for i := range result.Findings {
+			f := &result.Findings[i]
+			rec := &storage.FindingRecord{
+				ConnectionName: f.ConnectionName,
+				RunID:          f.RunID,
+				Severity:       string(f.Severity),
+				Category:       string(f.Category),
+				Title:          f.Title,
+				Description:    f.Description,
+				Remediation:    f.Remediation,
+				File:           f.File,
+				Line:           f.Line,
+				Confidence:     f.Confidence,
+				Status:         f.Status,
+			}
+			if err := db.CreateFinding(rec); err != nil {
+				logger.Errorw("Failed to persist finding", "error", err)
+			}
+		}
+
+		// Persist analysis record
+		analysisRec := &storage.AnalysisRecord{
+			ConnectionName: result.ConnectionName,
+			RunID:          result.RunID,
+			Summary:        result.Summary,
+			RiskScore:      result.RiskScore,
+			FindingsCount:  len(result.Findings),
+			TokensUsed:     result.TokensUsed,
+			Model:          result.Model,
+			DurationMS:     result.DurationMS,
+			AnalyzedAt:     result.AnalyzedAt,
+		}
+		if err := db.CreateAnalysisRecord(analysisRec); err != nil {
+			logger.Errorw("Failed to persist analysis record", "error", err)
+		}
+
+		jsonOK(w, result)
+	})
+
+	// Analysis: list findings
+	mux.HandleFunc("/api/v1/analysis/findings", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		connName := r.URL.Query().Get("connection")
+		findings, err := db.ListFindings(connName)
+		if err != nil {
+			jsonError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if findings == nil {
+			findings = []storage.FindingRecord{}
+		}
+		jsonOK(w, map[string]interface{}{"findings": findings, "count": len(findings)})
+	})
+
+	// Analysis: list history
+	mux.HandleFunc("/api/v1/analysis/history", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		connName := r.URL.Query().Get("connection")
+		history, err := db.ListAnalysisHistory(connName)
+		if err != nil {
+			jsonError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if history == nil {
+			history = []storage.AnalysisRecord{}
+		}
+		jsonOK(w, map[string]interface{}{"history": history, "count": len(history)})
 	})
 
 	server := &http.Server{

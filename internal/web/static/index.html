@@ -184,12 +184,76 @@
     .toast.success { background: var(--green); color: #fff; }
     .toast.error { background: var(--red); color: #fff; }
     @keyframes slideIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    .tabs { display: flex; gap: 0; margin-bottom: 24px; border-bottom: 1px solid var(--border); }
+    .tab {
+      padding: 10px 20px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--muted);
+      border-bottom: 2px solid transparent;
+      transition: all 0.15s;
+    }
+    .tab:hover { color: var(--text); }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    .finding-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-bottom: 8px;
+    }
+    .finding-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .severity-badge {
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .severity-badge.critical { background: #7f1d1d; color: #fca5a5; }
+    .severity-badge.high { background: #7c2d12; color: #fdba74; }
+    .severity-badge.medium { background: #713f12; color: #fde047; }
+    .severity-badge.low { background: #14532d; color: #86efac; }
+    .severity-badge.info { background: #1e3a5f; color: #93c5fd; }
+    .finding-title { font-weight: 600; font-size: 14px; }
+    .finding-desc { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+    .finding-meta { font-size: 12px; color: var(--muted); display: flex; gap: 16px; }
+    .risk-score {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      font-size: 18px;
+      font-weight: 700;
+      border: 3px solid;
+    }
+    .risk-score.low { border-color: var(--green); color: var(--green); }
+    .risk-score.medium { border-color: var(--yellow); color: var(--yellow); }
+    .risk-score.high { border-color: #f97316; color: #f97316; }
+    .risk-score.critical { border-color: var(--red); color: var(--red); }
+    .analysis-summary {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .analysis-summary .summary-text { flex: 1; font-size: 14px; }
   </style>
 </head>
 <body>
   <div class="header">
     <h1><span>Pipe</span>Warden</h1>
     <div class="header-actions">
+      <button class="btn btn-outline" onclick="showAnalyzeModal()">Analyze Run</button>
       <button class="btn btn-outline" onclick="testAll()">Test All</button>
       <button class="btn btn-primary" onclick="showAddModal()">+ Add Connection</button>
     </div>
@@ -203,11 +267,32 @@
       <div class="stat-card"><div class="value" id="stat-bitbucket">-</div><div class="label">Bitbucket</div></div>
     </div>
 
-    <div class="section-header">
-      <h2>Connections</h2>
+    <div class="tabs">
+      <div class="tab active" onclick="switchTab('connections')">Connections</div>
+      <div class="tab" onclick="switchTab('findings')">Security Findings</div>
+      <div class="tab" onclick="switchTab('history')">Analysis History</div>
     </div>
 
-    <div id="connections-list" class="connections-list"></div>
+    <div id="tab-connections" class="tab-content active">
+      <div class="section-header">
+        <h2>Connections</h2>
+      </div>
+      <div id="connections-list" class="connections-list"></div>
+    </div>
+
+    <div id="tab-findings" class="tab-content">
+      <div class="section-header">
+        <h2>Security Findings</h2>
+      </div>
+      <div id="findings-list"></div>
+    </div>
+
+    <div id="tab-history" class="tab-content">
+      <div class="section-header">
+        <h2>Analysis History</h2>
+      </div>
+      <div id="history-list"></div>
+    </div>
   </div>
 
   <!-- Add Connection Modal -->
@@ -264,6 +349,35 @@
         <div class="form-actions">
           <button type="button" class="btn btn-outline" onclick="closeAddModal()">Cancel</button>
           <button type="submit" class="btn btn-primary">Add Connection</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Analyze Modal -->
+  <div class="modal-overlay hidden" id="analyze-modal">
+    <div class="modal">
+      <h2>Analyze Pipeline Run</h2>
+      <form id="analyze-form" onsubmit="runAnalysis(event)">
+        <div class="form-group">
+          <label>Connection</label>
+          <select id="analyze-conn"></select>
+        </div>
+        <div class="form-group">
+          <label>Owner / Organization</label>
+          <input type="text" id="analyze-owner" placeholder="e.g. my-org" required>
+        </div>
+        <div class="form-group">
+          <label>Repository</label>
+          <input type="text" id="analyze-repo" placeholder="e.g. my-repo" required>
+        </div>
+        <div class="form-group">
+          <label>Run ID</label>
+          <input type="text" id="analyze-run-id" placeholder="e.g. 12345" required>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-outline" onclick="closeAnalyzeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="analyze-submit-btn">Analyze</button>
         </div>
       </form>
     </div>
@@ -430,6 +544,127 @@ function esc(s) { const d = document.createElement('div'); d.textContent = s; re
 document.getElementById('add-modal').addEventListener('click', function(e) {
   if (e.target === this) closeAddModal();
 });
+document.getElementById('analyze-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeAnalyzeModal();
+});
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelector(`.tab[onclick="switchTab('${tab}')"]`).classList.add('active');
+  document.getElementById('tab-' + tab).classList.add('active');
+  if (tab === 'findings') loadFindings();
+  if (tab === 'history') loadHistory();
+}
+
+async function showAnalyzeModal() {
+  const res = await fetch(API);
+  const data = await res.json();
+  const sel = document.getElementById('analyze-conn');
+  sel.innerHTML = (data.connections || []).map(c =>
+    `<option value="${esc(c.name)}">${esc(c.name)} (${c.platform})</option>`
+  ).join('');
+  document.getElementById('analyze-modal').classList.remove('hidden');
+}
+function closeAnalyzeModal() { document.getElementById('analyze-modal').classList.add('hidden'); }
+
+async function runAnalysis(e) {
+  e.preventDefault();
+  const btn = document.getElementById('analyze-submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Analyzing...';
+  const body = {
+    connection_name: document.getElementById('analyze-conn').value,
+    owner: document.getElementById('analyze-owner').value,
+    repo: document.getElementById('analyze-repo').value,
+    run_id: document.getElementById('analyze-run-id').value,
+  };
+  try {
+    const res = await fetch('/api/v1/analysis/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      toast(data.error || 'Analysis failed', 'error');
+      return;
+    }
+    toast(`Analysis complete: ${data.findings ? data.findings.length : 0} findings, risk score ${data.risk_score}`, 'success');
+    closeAnalyzeModal();
+    document.getElementById('analyze-form').reset();
+    switchTab('findings');
+  } catch (err) {
+    toast('Network error', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Analyze';
+  }
+}
+
+async function loadFindings() {
+  const el = document.getElementById('findings-list');
+  try {
+    const res = await fetch('/api/v1/analysis/findings');
+    const data = await res.json();
+    const findings = data.findings || [];
+    if (findings.length === 0) {
+      el.innerHTML = '<div class="empty-state"><h3>No findings yet</h3><p>Run a security analysis to see findings here.</p></div>';
+      return;
+    }
+    el.innerHTML = findings.map(f => `
+      <div class="finding-card">
+        <div class="finding-header">
+          <span class="severity-badge ${f.severity}">${f.severity}</span>
+          <span class="finding-title">${esc(f.title)}</span>
+        </div>
+        <div class="finding-desc">${esc(f.description)}</div>
+        <div class="finding-meta">
+          <span>Category: ${f.category}</span>
+          <span>Connection: ${esc(f.connection_name)}</span>
+          <span>Run: ${esc(f.run_id)}</span>
+          <span>Confidence: ${(f.confidence * 100).toFixed(0)}%</span>
+        </div>
+        ${f.remediation ? `<div class="finding-desc" style="margin-top:8px"><strong>Fix:</strong> ${esc(f.remediation)}</div>` : ''}
+      </div>
+    `).join('');
+  } catch (err) {
+    el.innerHTML = '<div class="empty-state"><h3>Failed to load findings</h3></div>';
+  }
+}
+
+async function loadHistory() {
+  const el = document.getElementById('history-list');
+  try {
+    const res = await fetch('/api/v1/analysis/history');
+    const data = await res.json();
+    const history = data.history || [];
+    if (history.length === 0) {
+      el.innerHTML = '<div class="empty-state"><h3>No analysis history</h3><p>Run a security analysis to see results here.</p></div>';
+      return;
+    }
+    el.innerHTML = history.map(h => {
+      const riskClass = h.risk_score >= 80 ? 'critical' : h.risk_score >= 60 ? 'high' : h.risk_score >= 30 ? 'medium' : 'low';
+      return `
+        <div class="analysis-summary">
+          <div class="risk-score ${riskClass}">${h.risk_score}</div>
+          <div class="summary-text">
+            <div><strong>${esc(h.connection_name)}</strong> &middot; Run ${esc(h.run_id)}</div>
+            <div style="color:var(--muted);font-size:13px;margin-top:4px">${esc(h.summary)}</div>
+            <div class="finding-meta" style="margin-top:4px">
+              <span>${h.findings_count} findings</span>
+              <span>${h.tokens_used} tokens</span>
+              <span>${h.duration_ms}ms</span>
+              <span>${h.model}</span>
+              <span>${new Date(h.analyzed_at).toLocaleString()}</span>
+            </div>
+          </div>
+        </div>`;
+    }).join('');
+  } catch (err) {
+    el.innerHTML = '<div class="empty-state"><h3>Failed to load history</h3></div>';
+  }
+}
 
 loadConnections();
 </script>
