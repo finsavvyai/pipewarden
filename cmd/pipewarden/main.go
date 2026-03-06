@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -12,6 +13,9 @@ import (
 	"time"
 
 	"github.com/finsavvyai/pipewarden/internal/config"
+	"github.com/finsavvyai/pipewarden/internal/integrations"
+	"github.com/finsavvyai/pipewarden/internal/integrations/bitbucket"
+	"github.com/finsavvyai/pipewarden/internal/integrations/github"
 	"github.com/finsavvyai/pipewarden/internal/logging"
 )
 
@@ -38,6 +42,28 @@ func main() {
 		"port", cfg.Server.Port,
 	)
 
+	// Setup integration manager
+	manager := integrations.NewManager(logger)
+
+	if cfg.Integrations.GitHub.Enabled {
+		ghClient := github.NewClient(github.Config{
+			Token:   cfg.Integrations.GitHub.Token,
+			BaseURL: cfg.Integrations.GitHub.BaseURL,
+		}, logger)
+		manager.Register(ghClient)
+		logger.Info("GitHub Actions integration enabled")
+	}
+
+	if cfg.Integrations.Bitbucket.Enabled {
+		bbClient := bitbucket.NewClient(bitbucket.Config{
+			Username:    cfg.Integrations.Bitbucket.Username,
+			AppPassword: cfg.Integrations.Bitbucket.AppPassword,
+			BaseURL:     cfg.Integrations.Bitbucket.BaseURL,
+		}, logger)
+		manager.Register(bbClient)
+		logger.Info("Bitbucket Pipelines integration enabled")
+	}
+
 	// Setup HTTP server
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -47,6 +73,31 @@ func main() {
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
+	})
+
+	mux.HandleFunc("/api/v1/integrations/status", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+		defer cancel()
+
+		results := manager.TestAllConnections(ctx)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(results)
+	})
+
+	mux.HandleFunc("/api/v1/integrations/platforms", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		platforms := manager.Platforms()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"platforms": platforms,
+		})
 	})
 
 	// Create server with timeouts

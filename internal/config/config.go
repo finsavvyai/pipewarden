@@ -10,11 +10,33 @@ import (
 
 // Config holds all configuration for our application
 type Config struct {
-	Environment string
-	Server      ServerConfig
-	Database    DatabaseConfig
-	Auth        AuthConfig
-	Logging     LoggingConfig
+	Environment  string
+	Server       ServerConfig
+	Database     DatabaseConfig
+	Auth         AuthConfig
+	Logging      LoggingConfig
+	Integrations IntegrationsConfig
+}
+
+// IntegrationsConfig holds configuration for all CI/CD platform integrations
+type IntegrationsConfig struct {
+	GitHub    GitHubConfig
+	Bitbucket BitbucketConfig
+}
+
+// GitHubConfig holds GitHub Actions integration configuration
+type GitHubConfig struct {
+	Enabled bool
+	Token   string
+	BaseURL string
+}
+
+// BitbucketConfig holds Bitbucket Pipelines integration configuration
+type BitbucketConfig struct {
+	Enabled     bool
+	Username    string
+	AppPassword string
+	BaseURL     string
 }
 
 // ServerConfig holds all server related configuration

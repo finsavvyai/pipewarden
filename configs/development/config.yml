@@ -17,3 +17,13 @@ auth:
 logging:
   level: debug
   json: false
+integrations:
+  github:
+    enabled: false
+    token: ""
+    baseURL: "https://api.github.com"
+  bitbucket:
+    enabled: false
+    username: ""
+    appPassword: ""
+    baseURL: "https://api.bitbucket.org/2.0"
