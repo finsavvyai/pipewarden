@@ -3,20 +3,25 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PipeWarden — Connection Manager</title>
+  <title>PipeWarden — Pipeline Security Dashboard</title>
   <style>
     :root {
       --bg: #0f1117;
       --surface: #1a1d27;
+      --surface-2: #22253a;
       --border: #2a2d3a;
       --text: #e1e4eb;
       --muted: #8b8fa3;
       --accent: #6366f1;
       --accent-hover: #818cf8;
+      --accent-glow: rgba(99,102,241,0.15);
       --green: #22c55e;
       --red: #ef4444;
       --yellow: #eab308;
+      --orange: #f97316;
+      --blue: #3b82f6;
       --radius: 8px;
+      --radius-lg: 12px;
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -25,34 +30,78 @@
       color: var(--text);
       min-height: 100vh;
     }
+
+    /* Header */
     .header {
       border-bottom: 1px solid var(--border);
-      padding: 16px 24px;
+      padding: 12px 24px;
       display: flex;
       align-items: center;
       justify-content: space-between;
+      position: sticky;
+      top: 0;
+      background: var(--bg);
+      z-index: 50;
+      backdrop-filter: blur(8px);
     }
+    .header-left { display: flex; align-items: center; gap: 16px; }
     .header h1 { font-size: 20px; font-weight: 600; }
     .header h1 span { color: var(--accent); }
-    .header-actions { display: flex; gap: 8px; }
-    .container { max-width: 960px; margin: 0 auto; padding: 24px; }
+    .header-actions { display: flex; gap: 8px; align-items: center; }
+    .header-status {
+      font-size: 11px;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-right: 12px;
+    }
+    .header-status .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+
+    /* Search */
+    .search-bar {
+      padding: 8px 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-size: 13px;
+      width: 200px;
+      outline: none;
+      transition: all 0.15s;
+    }
+    .search-bar:focus { border-color: var(--accent); width: 260px; }
+    .search-bar::placeholder { color: var(--muted); }
+
+    /* Container */
+    .container { max-width: 1060px; margin: 0 auto; padding: 20px 24px; }
+
+    /* Stats */
     .stats {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-      gap: 12px;
-      margin-bottom: 24px;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 10px;
+      margin-bottom: 20px;
     }
     .stat-card {
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      padding: 16px;
+      padding: 14px;
       text-align: center;
+      transition: border-color 0.15s;
     }
-    .stat-card .value { font-size: 28px; font-weight: 700; }
-    .stat-card .label { font-size: 12px; color: var(--muted); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .stat-card:hover { border-color: var(--accent); }
+    .stat-card .value { font-size: 26px; font-weight: 700; }
+    .stat-card .value.green { color: var(--green); }
+    .stat-card .value.red { color: var(--red); }
+    .stat-card .value.yellow { color: var(--yellow); }
+    .stat-card .value.orange { color: var(--orange); }
+    .stat-card .label { font-size: 11px; color: var(--muted); margin-top: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+    /* Buttons */
     .btn {
-      padding: 8px 16px;
+      padding: 7px 14px;
       border: none;
       border-radius: var(--radius);
       cursor: pointer;
@@ -62,35 +111,72 @@
       display: inline-flex;
       align-items: center;
       gap: 6px;
+      white-space: nowrap;
     }
     .btn-primary { background: var(--accent); color: #fff; }
     .btn-primary:hover { background: var(--accent-hover); }
-    .btn-danger { background: transparent; color: var(--red); border: 1px solid var(--red); }
+    .btn-danger { background: transparent; color: var(--red); border: 1px solid rgba(239,68,68,0.3); }
     .btn-danger:hover { background: var(--red); color: #fff; }
     .btn-outline { background: transparent; color: var(--text); border: 1px solid var(--border); }
     .btn-outline:hover { border-color: var(--accent); color: var(--accent); }
-    .btn-sm { padding: 5px 10px; font-size: 12px; }
+    .btn-ghost { background: transparent; color: var(--muted); border: none; padding: 4px 8px; }
+    .btn-ghost:hover { color: var(--text); }
+    .btn-success { background: transparent; color: var(--green); border: 1px solid rgba(34,197,94,0.3); }
+    .btn-success:hover { background: var(--green); color: #fff; }
+    .btn-warning { background: transparent; color: var(--yellow); border: 1px solid rgba(234,179,8,0.3); }
+    .btn-warning:hover { background: var(--yellow); color: #000; }
+    .btn-sm { padding: 4px 10px; font-size: 12px; }
     .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .connections-list { display: flex; flex-direction: column; gap: 8px; }
+    .btn-icon { padding: 6px; width: 30px; height: 30px; justify-content: center; }
+
+    /* Tabs */
+    .tabs { display: flex; gap: 0; margin-bottom: 20px; border-bottom: 1px solid var(--border); }
+    .tab {
+      padding: 10px 18px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--muted);
+      border-bottom: 2px solid transparent;
+      transition: all 0.15s;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .tab:hover { color: var(--text); }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .tab .badge {
+      background: var(--surface-2);
+      padding: 1px 7px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .tab.active .badge { background: var(--accent-glow); color: var(--accent); }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    /* Connection Cards */
+    .connections-list { display: flex; flex-direction: column; gap: 6px; }
     .conn-card {
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      padding: 16px;
+      padding: 14px 16px;
       display: flex;
       align-items: center;
-      gap: 16px;
-      transition: border-color 0.15s;
+      gap: 14px;
+      transition: all 0.15s;
     }
-    .conn-card:hover { border-color: var(--accent); }
+    .conn-card:hover { border-color: var(--accent); background: var(--surface-2); }
     .conn-icon {
-      width: 40px;
-      height: 40px;
+      width: 38px;
+      height: 38px;
       border-radius: var(--radius);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 18px;
+      font-size: 16px;
       font-weight: 700;
       flex-shrink: 0;
     }
@@ -99,183 +185,336 @@
     .conn-icon.bitbucket { background: #0f1f3d; color: #2684ff; }
     .conn-info { flex: 1; min-width: 0; }
     .conn-name { font-weight: 600; font-size: 14px; }
-    .conn-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
-    .conn-actions { display: flex; gap: 6px; flex-shrink: 0; }
+    .conn-meta { font-size: 12px; color: var(--muted); margin-top: 2px; display: flex; align-items: center; gap: 8px; }
+    .conn-actions { display: flex; gap: 4px; flex-shrink: 0; }
     .status-dot {
       width: 8px;
       height: 8px;
       border-radius: 50%;
       display: inline-block;
-      margin-right: 6px;
+      margin-right: 4px;
+      flex-shrink: 0;
     }
     .status-dot.ok { background: var(--green); }
     .status-dot.fail { background: var(--red); }
     .status-dot.pending { background: var(--yellow); animation: pulse 1s infinite; }
     .status-dot.unknown { background: var(--muted); }
-    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-    .modal-overlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(0,0,0,0.6);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 100;
-    }
-    .modal-overlay.hidden { display: none; }
-    .modal {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      width: 440px;
-      max-width: 95vw;
-      padding: 24px;
-    }
-    .modal h2 { font-size: 18px; margin-bottom: 16px; }
-    .form-group { margin-bottom: 14px; }
-    .form-group label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
-    .form-group input, .form-group select {
-      width: 100%;
-      padding: 10px 12px;
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      color: var(--text);
-      font-size: 14px;
-      outline: none;
-    }
-    .form-group input:focus, .form-group select:focus { border-color: var(--accent); }
-    .form-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
-    .platform-fields { display: none; }
-    .platform-fields.active { display: block; }
-    .empty-state {
-      text-align: center;
-      padding: 60px 20px;
-      color: var(--muted);
-    }
-    .empty-state h3 { font-size: 16px; color: var(--text); margin-bottom: 8px; }
-    .test-result {
-      margin-top: 8px;
-      padding: 8px 12px;
-      border-radius: var(--radius);
-      font-size: 12px;
-      display: none;
-    }
-    .test-result.show { display: block; }
-    .test-result.ok { background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.3); color: var(--green); }
-    .test-result.fail { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: var(--red); }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+    /* Section header */
     .section-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 16px;
+      margin-bottom: 12px;
     }
-    .section-header h2 { font-size: 16px; }
-    .toast {
-      position: fixed;
-      bottom: 20px;
-      right: 20px;
-      padding: 12px 20px;
-      border-radius: var(--radius);
-      font-size: 13px;
-      z-index: 200;
-      animation: slideIn 0.3s;
-    }
-    .toast.success { background: var(--green); color: #fff; }
-    .toast.error { background: var(--red); color: #fff; }
-    @keyframes slideIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-    .tabs { display: flex; gap: 0; margin-bottom: 24px; border-bottom: 1px solid var(--border); }
-    .tab {
-      padding: 10px 20px;
-      cursor: pointer;
-      font-size: 13px;
-      font-weight: 500;
-      color: var(--muted);
-      border-bottom: 2px solid transparent;
-      transition: all 0.15s;
-    }
-    .tab:hover { color: var(--text); }
-    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
-    .tab-content { display: none; }
-    .tab-content.active { display: block; }
+    .section-header h2 { font-size: 15px; font-weight: 600; }
+
+    /* Findings */
     .finding-card {
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      padding: 16px;
-      margin-bottom: 8px;
+      padding: 14px 16px;
+      margin-bottom: 6px;
+      transition: all 0.15s;
     }
-    .finding-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .finding-card:hover { border-color: var(--accent); }
+    .finding-card.resolved { opacity: 0.5; }
+    .finding-card.false_positive { opacity: 0.4; }
+    .finding-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
     .severity-badge {
       padding: 2px 8px;
       border-radius: 4px;
-      font-size: 11px;
-      font-weight: 600;
+      font-size: 10px;
+      font-weight: 700;
       text-transform: uppercase;
+      letter-spacing: 0.5px;
     }
     .severity-badge.critical { background: #7f1d1d; color: #fca5a5; }
     .severity-badge.high { background: #7c2d12; color: #fdba74; }
     .severity-badge.medium { background: #713f12; color: #fde047; }
     .severity-badge.low { background: #14532d; color: #86efac; }
     .severity-badge.info { background: #1e3a5f; color: #93c5fd; }
-    .finding-title { font-weight: 600; font-size: 14px; }
-    .finding-desc { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
-    .finding-meta { font-size: 12px; color: var(--muted); display: flex; gap: 16px; }
+    .status-badge {
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .status-badge.open { background: rgba(239,68,68,0.15); color: var(--red); }
+    .status-badge.acknowledged { background: rgba(234,179,8,0.15); color: var(--yellow); }
+    .status-badge.resolved { background: rgba(34,197,94,0.15); color: var(--green); }
+    .status-badge.false_positive { background: rgba(139,143,163,0.15); color: var(--muted); }
+    .finding-title { font-weight: 600; font-size: 14px; flex: 1; }
+    .finding-desc { font-size: 13px; color: var(--muted); margin-bottom: 8px; line-height: 1.4; }
+    .finding-meta { font-size: 11px; color: var(--muted); display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+    .finding-actions { display: flex; gap: 4px; margin-top: 10px; }
+
+    /* Filters */
+    .filter-bar {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .filter-chip {
+      padding: 4px 12px;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      font-size: 12px;
+      cursor: pointer;
+      color: var(--muted);
+      transition: all 0.15s;
+      background: transparent;
+    }
+    .filter-chip:hover { border-color: var(--accent); color: var(--text); }
+    .filter-chip.active { border-color: var(--accent); color: var(--accent); background: var(--accent-glow); }
+
+    /* Analysis History */
+    .analysis-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      transition: all 0.15s;
+      cursor: pointer;
+    }
+    .analysis-card:hover { border-color: var(--accent); background: var(--surface-2); }
     .risk-score {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 48px;
-      height: 48px;
+      width: 44px;
+      height: 44px;
       border-radius: 50%;
-      font-size: 18px;
+      font-size: 16px;
       font-weight: 700;
       border: 3px solid;
+      flex-shrink: 0;
     }
     .risk-score.low { border-color: var(--green); color: var(--green); }
     .risk-score.medium { border-color: var(--yellow); color: var(--yellow); }
-    .risk-score.high { border-color: #f97316; color: #f97316; }
+    .risk-score.high { border-color: var(--orange); color: var(--orange); }
     .risk-score.critical { border-color: var(--red); color: var(--red); }
-    .analysis-summary {
+
+    /* Pipeline browser */
+    .pipeline-runs { display: flex; flex-direction: column; gap: 6px; }
+    .run-card {
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      padding: 16px;
-      margin-bottom: 16px;
+      padding: 12px 16px;
       display: flex;
       align-items: center;
-      gap: 16px;
+      gap: 12px;
+      transition: all 0.15s;
     }
-    .analysis-summary .summary-text { flex: 1; font-size: 14px; }
+    .run-card:hover { border-color: var(--accent); }
+    .run-status {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .run-status.success { background: var(--green); }
+    .run-status.failed { background: var(--red); }
+    .run-status.running { background: var(--yellow); animation: pulse 1s infinite; }
+    .run-status.pending { background: var(--muted); }
+    .run-status.cancelled { background: var(--muted); }
+    .run-info { flex: 1; min-width: 0; }
+    .run-title { font-size: 13px; font-weight: 500; }
+    .run-meta { font-size: 11px; color: var(--muted); margin-top: 2px; display: flex; gap: 10px; }
+
+    /* Modals */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      animation: fadeIn 0.15s;
+    }
+    .modal-overlay.hidden { display: none; }
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      width: 480px;
+      max-width: 95vw;
+      max-height: 90vh;
+      overflow-y: auto;
+      padding: 24px;
+      animation: slideUp 0.2s;
+    }
+    .modal-wide { width: 640px; }
+    .modal h2 { font-size: 17px; margin-bottom: 16px; }
+    .form-group { margin-bottom: 12px; }
+    .form-group label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+    .form-group input, .form-group select {
+      width: 100%;
+      padding: 9px 12px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .form-group input:focus, .form-group select:focus { border-color: var(--accent); }
+    .form-group .help { font-size: 11px; color: var(--muted); margin-top: 3px; }
+    .form-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .platform-fields { display: none; }
+    .platform-fields.active { display: block; }
+
+    /* Empty state */
+    .empty-state {
+      text-align: center;
+      padding: 48px 20px;
+      color: var(--muted);
+    }
+    .empty-state h3 { font-size: 15px; color: var(--text); margin-bottom: 6px; }
+    .empty-state p { font-size: 13px; }
+
+    /* Toast */
+    .toast-container { position: fixed; bottom: 16px; right: 16px; z-index: 200; display: flex; flex-direction: column; gap: 8px; }
+    .toast {
+      padding: 10px 16px;
+      border-radius: var(--radius);
+      font-size: 13px;
+      animation: slideIn 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      max-width: 360px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+    .toast.success { background: #14532d; color: #86efac; border: 1px solid rgba(34,197,94,0.3); }
+    .toast.error { background: #7f1d1d; color: #fca5a5; border: 1px solid rgba(239,68,68,0.3); }
+    .toast.info { background: #1e3a5f; color: #93c5fd; border: 1px solid rgba(59,130,246,0.3); }
+
+    /* Tooltip */
+    .tooltip { position: relative; }
+    .tooltip:hover::after {
+      content: attr(data-tip);
+      position: absolute;
+      bottom: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 4px 8px;
+      background: var(--surface-2);
+      color: var(--text);
+      font-size: 11px;
+      border-radius: 4px;
+      white-space: nowrap;
+      z-index: 10;
+      margin-bottom: 4px;
+    }
+
+    /* Keyboard shortcut hints */
+    kbd {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: 11px;
+      font-family: inherit;
+      color: var(--muted);
+    }
+
+    /* Animations */
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes slideUp { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    @keyframes slideIn { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+    /* Loading skeleton */
+    .skeleton {
+      background: linear-gradient(90deg, var(--surface) 25%, var(--surface-2) 50%, var(--surface) 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.5s infinite;
+      border-radius: var(--radius);
+      height: 60px;
+      margin-bottom: 6px;
+    }
+    @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+
+    /* Progress bar for analysis */
+    .progress-bar {
+      width: 100%;
+      height: 3px;
+      background: var(--border);
+      border-radius: 2px;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+    .progress-bar .fill {
+      height: 100%;
+      background: var(--accent);
+      border-radius: 2px;
+      animation: progress 2s ease-in-out infinite;
+    }
+    @keyframes progress { 0% { width: 0%; } 50% { width: 80%; } 100% { width: 100%; } }
   </style>
 </head>
 <body>
   <div class="header">
-    <h1><span>Pipe</span>Warden</h1>
+    <div class="header-left">
+      <h1><span>Pipe</span>Warden</h1>
+      <div class="header-status">
+        <div class="dot"></div>
+        <span id="last-refresh">Ready</span>
+      </div>
+    </div>
     <div class="header-actions">
+      <input type="text" class="search-bar" id="global-search" placeholder="Search... (Ctrl+K)" autocomplete="off">
+      <button class="btn btn-outline" onclick="showBrowseModal()" data-tip="Browse pipeline runs">Pipelines</button>
       <button class="btn btn-outline" onclick="showAnalyzeModal()">Analyze Run</button>
       <button class="btn btn-outline" onclick="testAll()">Test All</button>
-      <button class="btn btn-primary" onclick="showAddModal()">+ Add Connection</button>
+      <button class="btn btn-primary" onclick="showAddModal()">+ Add</button>
     </div>
   </div>
 
   <div class="container">
     <div class="stats" id="stats">
-      <div class="stat-card"><div class="value" id="stat-total">-</div><div class="label">Total</div></div>
+      <div class="stat-card"><div class="value" id="stat-total">-</div><div class="label">Connections</div></div>
       <div class="stat-card"><div class="value" id="stat-github">-</div><div class="label">GitHub</div></div>
       <div class="stat-card"><div class="value" id="stat-gitlab">-</div><div class="label">GitLab</div></div>
       <div class="stat-card"><div class="value" id="stat-bitbucket">-</div><div class="label">Bitbucket</div></div>
+      <div class="stat-card"><div class="value red" id="stat-critical">-</div><div class="label">Critical</div></div>
+      <div class="stat-card"><div class="value orange" id="stat-high">-</div><div class="label">High</div></div>
+      <div class="stat-card"><div class="value yellow" id="stat-open">-</div><div class="label">Open</div></div>
     </div>
 
     <div class="tabs">
-      <div class="tab active" onclick="switchTab('connections')">Connections</div>
-      <div class="tab" onclick="switchTab('findings')">Security Findings</div>
-      <div class="tab" onclick="switchTab('history')">Analysis History</div>
+      <div class="tab active" data-tab="connections">Connections <span class="badge" id="badge-conn">0</span></div>
+      <div class="tab" data-tab="findings">Findings <span class="badge" id="badge-findings">0</span></div>
+      <div class="tab" data-tab="history">History <span class="badge" id="badge-history">0</span></div>
     </div>
 
     <div id="tab-connections" class="tab-content active">
       <div class="section-header">
         <h2>Connections</h2>
+        <div class="filter-bar">
+          <button class="filter-chip active" data-filter="all" onclick="filterConnections('all')">All</button>
+          <button class="filter-chip" data-filter="github" onclick="filterConnections('github')">GitHub</button>
+          <button class="filter-chip" data-filter="gitlab" onclick="filterConnections('gitlab')">GitLab</button>
+          <button class="filter-chip" data-filter="bitbucket" onclick="filterConnections('bitbucket')">Bitbucket</button>
+        </div>
       </div>
       <div id="connections-list" class="connections-list"></div>
     </div>
@@ -283,6 +522,14 @@
     <div id="tab-findings" class="tab-content">
       <div class="section-header">
         <h2>Security Findings</h2>
+        <div class="filter-bar">
+          <button class="filter-chip active" data-sev="all" onclick="filterFindings('all')">All</button>
+          <button class="filter-chip" data-sev="critical" onclick="filterFindings('critical')">Critical</button>
+          <button class="filter-chip" data-sev="high" onclick="filterFindings('high')">High</button>
+          <button class="filter-chip" data-sev="medium" onclick="filterFindings('medium')">Medium</button>
+          <button class="filter-chip" data-sev="low" onclick="filterFindings('low')">Low</button>
+          <button class="filter-chip" data-sev="open" onclick="filterFindings('open')">Open Only</button>
+        </div>
       </div>
       <div id="findings-list"></div>
     </div>
@@ -295,11 +542,14 @@
     </div>
   </div>
 
+  <div class="toast-container" id="toast-container"></div>
+
   <!-- Add Connection Modal -->
   <div class="modal-overlay hidden" id="add-modal">
     <div class="modal">
-      <h2>Add Connection</h2>
-      <form id="add-form" onsubmit="addConnection(event)">
+      <h2 id="add-modal-title">Add Connection</h2>
+      <form id="add-form" onsubmit="saveConnection(event)">
+        <input type="hidden" id="edit-mode" value="">
         <div class="form-group">
           <label>Connection Name</label>
           <input type="text" id="conn-name" placeholder="e.g. github-main" required>
@@ -316,20 +566,24 @@
           <div class="form-group">
             <label>Personal Access Token</label>
             <input type="password" id="gh-token" placeholder="ghp_xxx">
+            <div class="help">Requires repo and workflow scopes</div>
           </div>
           <div class="form-group">
             <label>Base URL (optional)</label>
             <input type="text" id="gh-base-url" placeholder="https://api.github.com">
+            <div class="help">Only needed for GitHub Enterprise</div>
           </div>
         </div>
         <div id="fields-gitlab" class="platform-fields">
           <div class="form-group">
             <label>Access Token</label>
             <input type="password" id="gl-token" placeholder="glpat-xxx">
+            <div class="help">Requires api scope</div>
           </div>
           <div class="form-group">
             <label>Base URL (optional)</label>
             <input type="text" id="gl-base-url" placeholder="https://gitlab.com/api/v4">
+            <div class="help">Only needed for self-hosted instances</div>
           </div>
         </div>
         <div id="fields-bitbucket" class="platform-fields">
@@ -340,6 +594,7 @@
           <div class="form-group">
             <label>App Password</label>
             <input type="password" id="bb-app-password" placeholder="your-app-password">
+            <div class="help">Requires pipeline:read permission</div>
           </div>
           <div class="form-group">
             <label>Base URL (optional)</label>
@@ -347,8 +602,8 @@
           </div>
         </div>
         <div class="form-actions">
-          <button type="button" class="btn btn-outline" onclick="closeAddModal()">Cancel</button>
-          <button type="submit" class="btn btn-primary">Add Connection</button>
+          <button type="button" class="btn btn-outline" onclick="closeModal('add-modal')">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="save-conn-btn">Add Connection</button>
         </div>
       </form>
     </div>
@@ -361,86 +616,250 @@
       <form id="analyze-form" onsubmit="runAnalysis(event)">
         <div class="form-group">
           <label>Connection</label>
-          <select id="analyze-conn"></select>
+          <select id="analyze-conn" onchange="onAnalyzeConnChange()"></select>
         </div>
-        <div class="form-group">
-          <label>Owner / Organization</label>
-          <input type="text" id="analyze-owner" placeholder="e.g. my-org" required>
-        </div>
-        <div class="form-group">
-          <label>Repository</label>
-          <input type="text" id="analyze-repo" placeholder="e.g. my-repo" required>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Owner / Organization</label>
+            <input type="text" id="analyze-owner" placeholder="e.g. my-org" required>
+          </div>
+          <div class="form-group">
+            <label>Repository</label>
+            <input type="text" id="analyze-repo" placeholder="e.g. my-repo" required>
+          </div>
         </div>
         <div class="form-group">
           <label>Run ID</label>
-          <input type="text" id="analyze-run-id" placeholder="e.g. 12345" required>
+          <div style="display:flex;gap:8px">
+            <input type="text" id="analyze-run-id" placeholder="e.g. 12345" required style="flex:1">
+            <button type="button" class="btn btn-outline btn-sm" onclick="browseRuns()">Browse</button>
+          </div>
+          <div class="help">Enter a run ID or click Browse to select from recent runs</div>
+        </div>
+        <div id="recent-runs-container" style="display:none;margin-bottom:12px">
+          <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;font-weight:600">Recent Runs</label>
+          <div id="recent-runs-list" class="pipeline-runs"></div>
         </div>
         <div class="form-actions">
-          <button type="button" class="btn btn-outline" onclick="closeAnalyzeModal()">Cancel</button>
+          <button type="button" class="btn btn-outline" onclick="closeModal('analyze-modal')">Cancel</button>
           <button type="submit" class="btn btn-primary" id="analyze-submit-btn">Analyze</button>
         </div>
       </form>
+      <div id="analysis-progress" style="display:none">
+        <div style="text-align:center;padding:16px 0">
+          <div style="font-size:14px;margin-bottom:8px">Analyzing pipeline run...</div>
+          <div style="font-size:12px;color:var(--muted)">Claude is reviewing the pipeline for security issues</div>
+          <div class="progress-bar"><div class="fill"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pipeline Browser Modal -->
+  <div class="modal-overlay hidden" id="browse-modal">
+    <div class="modal modal-wide">
+      <h2>Pipeline Browser</h2>
+      <div class="form-group">
+        <label>Connection</label>
+        <select id="browse-conn"></select>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Owner / Organization</label>
+          <input type="text" id="browse-owner" placeholder="e.g. my-org">
+        </div>
+        <div class="form-group">
+          <label>Repository</label>
+          <input type="text" id="browse-repo" placeholder="e.g. my-repo">
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:14px">
+        <button class="btn btn-primary btn-sm" onclick="fetchPipelineRuns()">Load Runs</button>
+        <button class="btn btn-outline btn-sm" onclick="fetchPipelines()">List Pipelines</button>
+      </div>
+      <div id="browse-results"></div>
+      <div class="form-actions">
+        <button class="btn btn-outline" onclick="closeModal('browse-modal')">Close</button>
+      </div>
     </div>
   </div>
 
 <script>
-const API = '/api/v1/connections';
+const API = '/api/v1';
+let allConnections = [];
+let allFindings = [];
+let allHistory = [];
 let connectionStatuses = {};
+let connFilter = 'all';
+let findingFilter = 'all';
+let autoRefreshInterval = null;
 
-async function loadConnections() {
+// ===== Init =====
+document.addEventListener('DOMContentLoaded', () => {
+  loadAll();
+  startAutoRefresh();
+  setupKeyboard();
+  setupTabs();
+});
+
+function setupTabs() {
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      const name = tab.dataset.tab;
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('tab-' + name).classList.add('active');
+      if (name === 'findings') loadFindings();
+      if (name === 'history') loadHistory();
+    });
+  });
+}
+
+function setupKeyboard() {
+  document.addEventListener('keydown', e => {
+    // Ctrl+K or Cmd+K for search
+    if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+      e.preventDefault();
+      document.getElementById('global-search').focus();
+    }
+    // Escape to close modals
+    if (e.key === 'Escape') {
+      document.querySelectorAll('.modal-overlay:not(.hidden)').forEach(m => m.classList.add('hidden'));
+    }
+    // 1-3 for tab switching (when not focused on input)
+    if (!['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
+      if (e.key === '1') document.querySelector('[data-tab="connections"]').click();
+      if (e.key === '2') document.querySelector('[data-tab="findings"]').click();
+      if (e.key === '3') document.querySelector('[data-tab="history"]').click();
+      if (e.key === 'n' || e.key === 'N') showAddModal();
+      if (e.key === 'a' || e.key === 'A') showAnalyzeModal();
+      if (e.key === 'r' || e.key === 'R') loadAll();
+    }
+  });
+
+  // Global search
+  document.getElementById('global-search').addEventListener('input', e => {
+    const q = e.target.value.toLowerCase();
+    const activeTab = document.querySelector('.tab.active').dataset.tab;
+    if (activeTab === 'connections') renderConnections(allConnections.filter(c =>
+      c.name.toLowerCase().includes(q) || c.platform.toLowerCase().includes(q)
+    ));
+    if (activeTab === 'findings') renderFindings(allFindings.filter(f =>
+      f.title.toLowerCase().includes(q) || f.description.toLowerCase().includes(q) || f.category.toLowerCase().includes(q)
+    ));
+    if (activeTab === 'history') renderHistory(allHistory.filter(h =>
+      h.connection_name.toLowerCase().includes(q) || h.summary.toLowerCase().includes(q)
+    ));
+  });
+}
+
+function startAutoRefresh() {
+  if (autoRefreshInterval) clearInterval(autoRefreshInterval);
+  autoRefreshInterval = setInterval(() => {
+    loadConnections(true);
+    loadFindingStats();
+  }, 30000);
+}
+
+async function loadAll() {
+  updateRefreshStatus('Refreshing...');
+  await Promise.all([loadConnections(), loadFindingStats()]);
+  updateRefreshStatus('Updated ' + new Date().toLocaleTimeString());
+}
+
+function updateRefreshStatus(msg) {
+  document.getElementById('last-refresh').textContent = msg;
+}
+
+// ===== Connections =====
+async function loadConnections(silent) {
   try {
-    const res = await fetch(API);
+    const res = await fetch(API + '/connections');
     const data = await res.json();
-    renderConnections(data.connections || []);
-    updateStats(data.connections || []);
+    allConnections = data.connections || [];
+    renderConnections(allConnections);
+    updateStats();
   } catch (e) {
-    document.getElementById('connections-list').innerHTML =
-      '<div class="empty-state"><h3>Unable to reach API</h3><p>Check that PipeWarden is running.</p></div>';
+    if (!silent) {
+      document.getElementById('connections-list').innerHTML =
+        '<div class="empty-state"><h3>Unable to reach API</h3><p>Check that PipeWarden is running.</p></div>';
+    }
   }
 }
 
 function renderConnections(conns) {
   const list = document.getElementById('connections-list');
-  if (conns.length === 0) {
-    list.innerHTML = '<div class="empty-state"><h3>No connections yet</h3><p>Add your first CI/CD connection to get started.</p></div>';
+  const filtered = connFilter === 'all' ? conns : conns.filter(c => c.platform === connFilter);
+  document.getElementById('badge-conn').textContent = allConnections.length;
+
+  if (filtered.length === 0) {
+    const msg = connFilter !== 'all'
+      ? `No ${connFilter} connections`
+      : 'No connections yet';
+    list.innerHTML = `<div class="empty-state"><h3>${msg}</h3><p>Add your first CI/CD connection to get started.</p></div>`;
     return;
   }
-  list.innerHTML = conns.map(c => {
+  list.innerHTML = filtered.map(c => {
     const st = connectionStatuses[c.name];
-    let statusHTML = '<span class="status-dot unknown"></span>Not tested';
+    let statusHTML = '<span class="status-dot unknown"></span><span>Not tested</span>';
     if (st === 'testing') {
-      statusHTML = '<span class="status-dot pending"></span>Testing...';
+      statusHTML = '<span class="status-dot pending"></span><span>Testing...</span>';
     } else if (st && st.connected) {
-      statusHTML = `<span class="status-dot ok"></span>Connected as ${st.user || 'unknown'} (${st.latency ? (st.latency/1e6).toFixed(0) + 'ms' : ''})`;
+      const latency = st.latency ? (st.latency/1e6).toFixed(0) + 'ms' : '';
+      statusHTML = `<span class="status-dot ok"></span><span>${esc(st.user || 'Connected')} ${latency ? '&middot; ' + latency : ''}</span>`;
     } else if (st && !st.connected) {
-      statusHTML = `<span class="status-dot fail"></span>${st.message || 'Failed'}`;
+      statusHTML = `<span class="status-dot fail"></span><span>${esc(st.message || 'Failed')}</span>`;
     }
     const icon = c.platform === 'github' ? 'GH' : c.platform === 'gitlab' ? 'GL' : 'BB';
     return `
-      <div class="conn-card" id="card-${c.name}">
+      <div class="conn-card">
         <div class="conn-icon ${c.platform}">${icon}</div>
         <div class="conn-info">
           <div class="conn-name">${esc(c.name)}</div>
-          <div class="conn-meta">${c.platform}${c.base_url ? ' &middot; ' + esc(c.base_url) : ''}</div>
+          <div class="conn-meta">
+            ${c.platform}${c.base_url ? ' &middot; ' + esc(c.base_url) : ''}
+          </div>
           <div class="conn-meta">${statusHTML}</div>
         </div>
         <div class="conn-actions">
           <button class="btn btn-outline btn-sm" onclick="testOne('${esc(c.name)}')">Test</button>
+          <button class="btn btn-outline btn-sm" onclick="showEditModal('${esc(c.name)}','${esc(c.platform)}','${esc(c.base_url || '')}')">Edit</button>
           <button class="btn btn-danger btn-sm" onclick="deleteConn('${esc(c.name)}')">Remove</button>
         </div>
       </div>`;
   }).join('');
 }
 
-function updateStats(conns) {
-  document.getElementById('stat-total').textContent = conns.length;
-  document.getElementById('stat-github').textContent = conns.filter(c => c.platform === 'github').length;
-  document.getElementById('stat-gitlab').textContent = conns.filter(c => c.platform === 'gitlab').length;
-  document.getElementById('stat-bitbucket').textContent = conns.filter(c => c.platform === 'bitbucket').length;
+function filterConnections(f) {
+  connFilter = f;
+  document.querySelectorAll('[data-filter]').forEach(el => {
+    el.classList.toggle('active', el.dataset.filter === f);
+  });
+  renderConnections(allConnections);
 }
 
-async function addConnection(e) {
+function updateStats() {
+  document.getElementById('stat-total').textContent = allConnections.length;
+  document.getElementById('stat-github').textContent = allConnections.filter(c => c.platform === 'github').length;
+  document.getElementById('stat-gitlab').textContent = allConnections.filter(c => c.platform === 'gitlab').length;
+  document.getElementById('stat-bitbucket').textContent = allConnections.filter(c => c.platform === 'bitbucket').length;
+}
+
+async function loadFindingStats() {
+  try {
+    const res = await fetch(API + '/analysis/stats');
+    const stats = await res.json();
+    document.getElementById('stat-critical').textContent = stats.critical || 0;
+    document.getElementById('stat-high').textContent = stats.high || 0;
+    document.getElementById('stat-open').textContent = stats.open || 0;
+  } catch (e) { /* ignore */ }
+}
+
+// ===== Connection CRUD =====
+async function saveConnection(e) {
   e.preventDefault();
+  const editMode = document.getElementById('edit-mode').value;
   const platform = document.getElementById('conn-platform').value;
   const body = {
     name: document.getElementById('conn-name').value,
@@ -459,120 +878,318 @@ async function addConnection(e) {
   }
 
   try {
-    const res = await fetch(API, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
+    let res;
+    if (editMode) {
+      res = await fetch(API + '/connections/update', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    } else {
+      res = await fetch(API + '/connections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    }
     if (!res.ok) {
       const err = await res.json();
-      toast(err.error || 'Failed to add', 'error');
+      toast(err.error || 'Failed', 'error');
       return;
     }
-    toast('Connection added!', 'success');
-    closeAddModal();
+    toast(editMode ? 'Connection updated!' : 'Connection added!', 'success');
+    closeModal('add-modal');
     document.getElementById('add-form').reset();
+    document.getElementById('edit-mode').value = '';
     loadConnections();
   } catch (e) {
     toast('Network error', 'error');
   }
+}
+
+function showAddModal() {
+  document.getElementById('edit-mode').value = '';
+  document.getElementById('add-modal-title').textContent = 'Add Connection';
+  document.getElementById('save-conn-btn').textContent = 'Add Connection';
+  document.getElementById('conn-name').disabled = false;
+  document.getElementById('add-form').reset();
+  togglePlatformFields();
+  document.getElementById('add-modal').classList.remove('hidden');
+  setTimeout(() => document.getElementById('conn-name').focus(), 100);
+}
+
+function showEditModal(name, platform, baseUrl) {
+  document.getElementById('edit-mode').value = name;
+  document.getElementById('add-modal-title').textContent = 'Edit Connection';
+  document.getElementById('save-conn-btn').textContent = 'Save Changes';
+  document.getElementById('conn-name').value = name;
+  document.getElementById('conn-name').disabled = true;
+  document.getElementById('conn-platform').value = platform;
+  togglePlatformFields();
+  if (platform === 'github') {
+    document.getElementById('gh-base-url').value = baseUrl;
+    document.getElementById('gh-token').placeholder = '(unchanged)';
+  } else if (platform === 'gitlab') {
+    document.getElementById('gl-base-url').value = baseUrl;
+    document.getElementById('gl-token').placeholder = '(unchanged)';
+  } else {
+    document.getElementById('bb-base-url').value = baseUrl;
+    document.getElementById('bb-app-password').placeholder = '(unchanged)';
+  }
+  document.getElementById('add-modal').classList.remove('hidden');
 }
 
 async function deleteConn(name) {
   if (!confirm(`Remove connection "${name}"?`)) return;
   try {
-    const res = await fetch(`${API}/${encodeURIComponent(name)}`, { method: 'DELETE' });
-    if (!res.ok) {
-      toast('Failed to remove', 'error');
-      return;
-    }
+    const res = await fetch(`${API}/connections/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    if (!res.ok) { toast('Failed to remove', 'error'); return; }
     delete connectionStatuses[name];
     toast('Connection removed', 'success');
     loadConnections();
-  } catch (e) {
-    toast('Network error', 'error');
-  }
+  } catch (e) { toast('Network error', 'error'); }
 }
 
 async function testOne(name) {
   connectionStatuses[name] = 'testing';
-  loadConnections();
+  renderConnections(allConnections);
   try {
-    const res = await fetch(`${API}/${encodeURIComponent(name)}/test`, { method: 'POST' });
-    const data = await res.json();
-    connectionStatuses[name] = data;
+    const res = await fetch(`${API}/connections/${encodeURIComponent(name)}/test`, { method: 'POST' });
+    connectionStatuses[name] = await res.json();
   } catch (e) {
     connectionStatuses[name] = { connected: false, message: 'Request failed' };
   }
-  loadConnections();
+  renderConnections(allConnections);
 }
 
 async function testAll() {
-  const res0 = await fetch(API);
-  const data0 = await res0.json();
-  (data0.connections || []).forEach(c => { connectionStatuses[c.name] = 'testing'; });
-  loadConnections();
-
+  allConnections.forEach(c => { connectionStatuses[c.name] = 'testing'; });
+  renderConnections(allConnections);
+  toast('Testing all connections...', 'info');
   try {
-    const res = await fetch(`${API}/test`, { method: 'POST' });
+    const res = await fetch(`${API}/connections/test`, { method: 'POST' });
     const data = await res.json();
     Object.assign(connectionStatuses, data);
+    const ok = Object.values(data).filter(s => s.connected).length;
+    const fail = Object.values(data).filter(s => !s.connected).length;
+    toast(`${ok} connected, ${fail} failed`, ok > 0 ? 'success' : 'error');
   } catch (e) {
     toast('Test failed', 'error');
   }
-  loadConnections();
+  renderConnections(allConnections);
 }
 
-function showAddModal() { document.getElementById('add-modal').classList.remove('hidden'); }
-function closeAddModal() { document.getElementById('add-modal').classList.add('hidden'); }
-function togglePlatformFields() {
-  document.querySelectorAll('.platform-fields').forEach(el => el.classList.remove('active'));
-  const p = document.getElementById('conn-platform').value;
-  document.getElementById('fields-' + p).classList.add('active');
+// ===== Findings =====
+async function loadFindings() {
+  const el = document.getElementById('findings-list');
+  try {
+    const res = await fetch(API + '/analysis/findings');
+    const data = await res.json();
+    allFindings = data.findings || [];
+    document.getElementById('badge-findings').textContent = allFindings.filter(f => f.status === 'open').length;
+    renderFindings(allFindings);
+  } catch (err) {
+    el.innerHTML = '<div class="empty-state"><h3>Failed to load findings</h3></div>';
+  }
 }
 
-function toast(msg, type) {
-  const el = document.createElement('div');
-  el.className = 'toast ' + type;
-  el.textContent = msg;
-  document.body.appendChild(el);
-  setTimeout(() => el.remove(), 3000);
+function renderFindings(findings) {
+  const el = document.getElementById('findings-list');
+  let filtered = findings;
+  if (findingFilter === 'open') {
+    filtered = findings.filter(f => f.status === 'open');
+  } else if (findingFilter !== 'all') {
+    filtered = findings.filter(f => f.severity === findingFilter);
+  }
+  if (filtered.length === 0) {
+    el.innerHTML = '<div class="empty-state"><h3>No findings</h3><p>Run a security analysis to see findings here.</p></div>';
+    return;
+  }
+  el.innerHTML = filtered.map(f => `
+    <div class="finding-card ${f.status}">
+      <div class="finding-header">
+        <span class="severity-badge ${f.severity}">${f.severity}</span>
+        <span class="status-badge ${f.status}">${f.status.replace('_', ' ')}</span>
+        <span class="finding-title">${esc(f.title)}</span>
+      </div>
+      <div class="finding-desc">${esc(f.description)}</div>
+      ${f.remediation ? `<div class="finding-desc"><strong>Remediation:</strong> ${esc(f.remediation)}</div>` : ''}
+      <div class="finding-meta">
+        <span>${f.category}</span>
+        <span>${esc(f.connection_name)}</span>
+        <span>Run ${esc(f.run_id)}</span>
+        <span>${(f.confidence * 100).toFixed(0)}% confidence</span>
+        ${f.file ? `<span>${esc(f.file)}${f.line ? ':' + f.line : ''}</span>` : ''}
+        <span>${new Date(f.created_at).toLocaleDateString()}</span>
+      </div>
+      <div class="finding-actions">
+        ${f.status === 'open' ? `
+          <button class="btn btn-warning btn-sm" onclick="updateFinding(${f.id},'acknowledged')">Acknowledge</button>
+          <button class="btn btn-success btn-sm" onclick="updateFinding(${f.id},'resolved')">Resolve</button>
+          <button class="btn btn-ghost btn-sm" onclick="updateFinding(${f.id},'false_positive')">False Positive</button>
+        ` : ''}
+        ${f.status === 'acknowledged' ? `
+          <button class="btn btn-success btn-sm" onclick="updateFinding(${f.id},'resolved')">Resolve</button>
+          <button class="btn btn-outline btn-sm" onclick="updateFinding(${f.id},'open')">Reopen</button>
+        ` : ''}
+        ${f.status === 'resolved' || f.status === 'false_positive' ? `
+          <button class="btn btn-outline btn-sm" onclick="updateFinding(${f.id},'open')">Reopen</button>
+        ` : ''}
+      </div>
+    </div>
+  `).join('');
 }
 
-function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
-
-document.getElementById('add-modal').addEventListener('click', function(e) {
-  if (e.target === this) closeAddModal();
-});
-document.getElementById('analyze-modal').addEventListener('click', function(e) {
-  if (e.target === this) closeAnalyzeModal();
-});
-
-function switchTab(tab) {
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-  document.querySelector(`.tab[onclick="switchTab('${tab}')"]`).classList.add('active');
-  document.getElementById('tab-' + tab).classList.add('active');
-  if (tab === 'findings') loadFindings();
-  if (tab === 'history') loadHistory();
+function filterFindings(f) {
+  findingFilter = f;
+  document.querySelectorAll('[data-sev]').forEach(el => {
+    el.classList.toggle('active', el.dataset.sev === f);
+  });
+  renderFindings(allFindings);
 }
 
+async function updateFinding(id, status) {
+  try {
+    const res = await fetch(`${API}/analysis/findings/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    });
+    if (!res.ok) { toast('Failed to update finding', 'error'); return; }
+    toast(`Finding marked as ${status.replace('_', ' ')}`, 'success');
+    loadFindings();
+    loadFindingStats();
+  } catch (e) { toast('Network error', 'error'); }
+}
+
+// ===== History =====
+async function loadHistory() {
+  const el = document.getElementById('history-list');
+  try {
+    const res = await fetch(API + '/analysis/history');
+    const data = await res.json();
+    allHistory = data.history || [];
+    document.getElementById('badge-history').textContent = allHistory.length;
+    renderHistory(allHistory);
+  } catch (err) {
+    el.innerHTML = '<div class="empty-state"><h3>Failed to load history</h3></div>';
+  }
+}
+
+function renderHistory(history) {
+  const el = document.getElementById('history-list');
+  if (history.length === 0) {
+    el.innerHTML = '<div class="empty-state"><h3>No analysis history</h3><p>Run a security analysis to see results here.</p></div>';
+    return;
+  }
+  el.innerHTML = history.map(h => {
+    const riskClass = h.risk_score >= 80 ? 'critical' : h.risk_score >= 60 ? 'high' : h.risk_score >= 30 ? 'medium' : 'low';
+    const dur = h.duration_ms < 1000 ? h.duration_ms + 'ms' : (h.duration_ms / 1000).toFixed(1) + 's';
+    return `
+      <div class="analysis-card" onclick="viewAnalysis('${esc(h.connection_name)}','${esc(h.run_id)}')">
+        <div class="risk-score ${riskClass}">${h.risk_score}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;font-size:14px">${esc(h.connection_name)} &middot; Run ${esc(h.run_id)}</div>
+          <div style="color:var(--muted);font-size:12px;margin-top:4px;line-height:1.3">${esc(h.summary)}</div>
+          <div class="finding-meta" style="margin-top:6px">
+            <span>${h.findings_count} findings</span>
+            <span>${h.tokens_used} tokens</span>
+            <span>${dur}</span>
+            <span>${h.model}</span>
+            <span>${new Date(h.analyzed_at).toLocaleString()}</span>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function viewAnalysis(connName, runId) {
+  // Switch to findings tab filtered by this run
+  document.querySelector('[data-tab="findings"]').click();
+  // Filter findings to this connection+run
+  const filtered = allFindings.filter(f => f.connection_name === connName && f.run_id === runId);
+  if (filtered.length > 0) {
+    renderFindings(filtered);
+    toast(`Showing ${filtered.length} findings for run ${runId}`, 'info');
+  }
+}
+
+// ===== Analysis =====
 async function showAnalyzeModal() {
-  const res = await fetch(API);
+  const res = await fetch(API + '/connections');
   const data = await res.json();
   const sel = document.getElementById('analyze-conn');
   sel.innerHTML = (data.connections || []).map(c =>
-    `<option value="${esc(c.name)}">${esc(c.name)} (${c.platform})</option>`
+    `<option value="${esc(c.name)}" data-platform="${c.platform}">${esc(c.name)} (${c.platform})</option>`
   ).join('');
+  document.getElementById('recent-runs-container').style.display = 'none';
+  document.getElementById('analysis-progress').style.display = 'none';
+  document.getElementById('analyze-form').style.display = 'block';
   document.getElementById('analyze-modal').classList.remove('hidden');
 }
-function closeAnalyzeModal() { document.getElementById('analyze-modal').classList.add('hidden'); }
+
+function onAnalyzeConnChange() {
+  document.getElementById('recent-runs-container').style.display = 'none';
+}
+
+async function browseRuns() {
+  const conn = document.getElementById('analyze-conn').value;
+  const owner = document.getElementById('analyze-owner').value;
+  const repo = document.getElementById('analyze-repo').value;
+  if (!conn || !owner || !repo) {
+    toast('Fill in connection, owner, and repo first', 'error');
+    return;
+  }
+  const container = document.getElementById('recent-runs-container');
+  const list = document.getElementById('recent-runs-list');
+  container.style.display = 'block';
+  list.innerHTML = '<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>';
+
+  try {
+    const res = await fetch(`${API}/pipelines/runs?connection=${encodeURIComponent(conn)}&owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}&limit=10`);
+    const data = await res.json();
+    if (!res.ok) { list.innerHTML = `<div class="empty-state"><p>${esc(data.error)}</p></div>`; return; }
+    const runs = data.runs || [];
+    if (runs.length === 0) {
+      list.innerHTML = '<div class="empty-state"><p>No recent runs found</p></div>';
+      return;
+    }
+    list.innerHTML = runs.map(r => {
+      const status = (r.Status || '').toLowerCase();
+      return `
+        <div class="run-card" style="cursor:pointer" onclick="selectRun('${esc(r.ID)}')">
+          <div class="run-status ${status}"></div>
+          <div class="run-info">
+            <div class="run-title">#${esc(r.ID)} ${esc(r.PipelineID || '')}</div>
+            <div class="run-meta">
+              <span>${status}</span>
+              ${r.Branch ? `<span>${esc(r.Branch)}</span>` : ''}
+              ${r.CommitSHA ? `<span>${esc(r.CommitSHA.substring(0,7))}</span>` : ''}
+              ${r.StartedAt ? `<span>${new Date(r.StartedAt).toLocaleString()}</span>` : ''}
+            </div>
+          </div>
+        </div>`;
+    }).join('');
+  } catch (e) {
+    list.innerHTML = '<div class="empty-state"><p>Failed to fetch runs</p></div>';
+  }
+}
+
+function selectRun(runId) {
+  document.getElementById('analyze-run-id').value = runId;
+  document.getElementById('recent-runs-container').style.display = 'none';
+  toast('Run ' + runId + ' selected', 'info');
+}
 
 async function runAnalysis(e) {
   e.preventDefault();
+  const form = document.getElementById('analyze-form');
+  const progress = document.getElementById('analysis-progress');
   const btn = document.getElementById('analyze-submit-btn');
   btn.disabled = true;
-  btn.textContent = 'Analyzing...';
+  form.style.display = 'none';
+  progress.style.display = 'block';
+
   const body = {
     connection_name: document.getElementById('analyze-conn').value,
     owner: document.getElementById('analyze-owner').value,
@@ -580,7 +1197,7 @@ async function runAnalysis(e) {
     run_id: document.getElementById('analyze-run-id').value,
   };
   try {
-    const res = await fetch('/api/v1/analysis/run', {
+    const res = await fetch(API + '/analysis/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -590,83 +1207,140 @@ async function runAnalysis(e) {
       toast(data.error || 'Analysis failed', 'error');
       return;
     }
-    toast(`Analysis complete: ${data.findings ? data.findings.length : 0} findings, risk score ${data.risk_score}`, 'success');
-    closeAnalyzeModal();
+    const count = data.findings ? data.findings.length : 0;
+    toast(`Analysis complete: ${count} findings, risk score ${data.risk_score}/100`, 'success');
+    closeModal('analyze-modal');
     document.getElementById('analyze-form').reset();
-    switchTab('findings');
+    loadFindingStats();
+    document.querySelector('[data-tab="findings"]').click();
   } catch (err) {
     toast('Network error', 'error');
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Analyze';
+    form.style.display = 'block';
+    progress.style.display = 'none';
   }
 }
 
-async function loadFindings() {
-  const el = document.getElementById('findings-list');
-  try {
-    const res = await fetch('/api/v1/analysis/findings');
-    const data = await res.json();
-    const findings = data.findings || [];
-    if (findings.length === 0) {
-      el.innerHTML = '<div class="empty-state"><h3>No findings yet</h3><p>Run a security analysis to see findings here.</p></div>';
-      return;
-    }
-    el.innerHTML = findings.map(f => `
-      <div class="finding-card">
-        <div class="finding-header">
-          <span class="severity-badge ${f.severity}">${f.severity}</span>
-          <span class="finding-title">${esc(f.title)}</span>
-        </div>
-        <div class="finding-desc">${esc(f.description)}</div>
-        <div class="finding-meta">
-          <span>Category: ${f.category}</span>
-          <span>Connection: ${esc(f.connection_name)}</span>
-          <span>Run: ${esc(f.run_id)}</span>
-          <span>Confidence: ${(f.confidence * 100).toFixed(0)}%</span>
-        </div>
-        ${f.remediation ? `<div class="finding-desc" style="margin-top:8px"><strong>Fix:</strong> ${esc(f.remediation)}</div>` : ''}
-      </div>
-    `).join('');
-  } catch (err) {
-    el.innerHTML = '<div class="empty-state"><h3>Failed to load findings</h3></div>';
-  }
+// ===== Pipeline Browser =====
+async function showBrowseModal() {
+  const res = await fetch(API + '/connections');
+  const data = await res.json();
+  document.getElementById('browse-conn').innerHTML = (data.connections || []).map(c =>
+    `<option value="${esc(c.name)}">${esc(c.name)} (${c.platform})</option>`
+  ).join('');
+  document.getElementById('browse-results').innerHTML = '';
+  document.getElementById('browse-modal').classList.remove('hidden');
 }
 
-async function loadHistory() {
-  const el = document.getElementById('history-list');
+async function fetchPipelineRuns() {
+  const conn = document.getElementById('browse-conn').value;
+  const owner = document.getElementById('browse-owner').value;
+  const repo = document.getElementById('browse-repo').value;
+  if (!conn || !owner || !repo) { toast('Fill in all fields', 'error'); return; }
+  const el = document.getElementById('browse-results');
+  el.innerHTML = '<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>';
   try {
-    const res = await fetch('/api/v1/analysis/history');
+    const res = await fetch(`${API}/pipelines/runs?connection=${encodeURIComponent(conn)}&owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}&limit=20`);
     const data = await res.json();
-    const history = data.history || [];
-    if (history.length === 0) {
-      el.innerHTML = '<div class="empty-state"><h3>No analysis history</h3><p>Run a security analysis to see results here.</p></div>';
-      return;
-    }
-    el.innerHTML = history.map(h => {
-      const riskClass = h.risk_score >= 80 ? 'critical' : h.risk_score >= 60 ? 'high' : h.risk_score >= 30 ? 'medium' : 'low';
-      return `
-        <div class="analysis-summary">
-          <div class="risk-score ${riskClass}">${h.risk_score}</div>
-          <div class="summary-text">
-            <div><strong>${esc(h.connection_name)}</strong> &middot; Run ${esc(h.run_id)}</div>
-            <div style="color:var(--muted);font-size:13px;margin-top:4px">${esc(h.summary)}</div>
-            <div class="finding-meta" style="margin-top:4px">
-              <span>${h.findings_count} findings</span>
-              <span>${h.tokens_used} tokens</span>
-              <span>${h.duration_ms}ms</span>
-              <span>${h.model}</span>
-              <span>${new Date(h.analyzed_at).toLocaleString()}</span>
+    if (!res.ok) { el.innerHTML = `<div class="empty-state"><p>${esc(data.error)}</p></div>`; return; }
+    const runs = data.runs || [];
+    if (runs.length === 0) { el.innerHTML = '<div class="empty-state"><p>No runs found</p></div>'; return; }
+    el.innerHTML = `<div style="font-size:12px;color:var(--muted);margin-bottom:8px">${runs.length} runs found</div>` +
+      runs.map(r => {
+        const status = (r.Status || '').toLowerCase();
+        const steps = (r.Steps || []).map(s => `<span style="margin-right:8px">${esc(s.Name)}: ${(s.Status||'').toLowerCase()}</span>`).join('');
+        return `
+          <div class="run-card">
+            <div class="run-status ${status}"></div>
+            <div class="run-info">
+              <div class="run-title">#${esc(r.ID)} ${esc(r.PipelineID || '')}</div>
+              <div class="run-meta">
+                <span>${status}</span>
+                ${r.Branch ? `<span>${esc(r.Branch)}</span>` : ''}
+                ${r.CommitSHA ? `<span>${esc(r.CommitSHA.substring(0,7))}</span>` : ''}
+                ${r.StartedAt ? `<span>${new Date(r.StartedAt).toLocaleString()}</span>` : ''}
+                ${r.URL ? `<a href="${esc(r.URL)}" target="_blank" style="color:var(--accent)">View</a>` : ''}
+              </div>
+              ${steps ? `<div class="run-meta" style="margin-top:2px">${steps}</div>` : ''}
+            </div>
+            <button class="btn btn-outline btn-sm" onclick="analyzeFromBrowser('${esc(conn)}','${esc(owner)}','${esc(repo)}','${esc(r.ID)}')">Analyze</button>
+          </div>`;
+      }).join('');
+  } catch (e) { el.innerHTML = '<div class="empty-state"><p>Failed to fetch runs</p></div>'; }
+}
+
+async function fetchPipelines() {
+  const conn = document.getElementById('browse-conn').value;
+  const owner = document.getElementById('browse-owner').value;
+  const repo = document.getElementById('browse-repo').value;
+  if (!conn || !owner || !repo) { toast('Fill in all fields', 'error'); return; }
+  const el = document.getElementById('browse-results');
+  el.innerHTML = '<div class="skeleton"></div><div class="skeleton"></div>';
+  try {
+    const res = await fetch(`${API}/pipelines?connection=${encodeURIComponent(conn)}&owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}`);
+    const data = await res.json();
+    if (!res.ok) { el.innerHTML = `<div class="empty-state"><p>${esc(data.error)}</p></div>`; return; }
+    const pipelines = data.pipelines || [];
+    if (pipelines.length === 0) { el.innerHTML = '<div class="empty-state"><p>No pipelines found</p></div>'; return; }
+    el.innerHTML = `<div style="font-size:12px;color:var(--muted);margin-bottom:8px">${pipelines.length} pipelines</div>` +
+      pipelines.map(p => `
+        <div class="run-card">
+          <div class="run-info">
+            <div class="run-title">${esc(p.Name || p.ID)}</div>
+            <div class="run-meta">
+              <span>ID: ${esc(p.ID)}</span>
+              ${p.URL ? `<a href="${esc(p.URL)}" target="_blank" style="color:var(--accent)">View</a>` : ''}
             </div>
           </div>
-        </div>`;
-    }).join('');
-  } catch (err) {
-    el.innerHTML = '<div class="empty-state"><h3>Failed to load history</h3></div>';
-  }
+        </div>
+      `).join('');
+  } catch (e) { el.innerHTML = '<div class="empty-state"><p>Failed to fetch pipelines</p></div>'; }
 }
 
-loadConnections();
+function analyzeFromBrowser(conn, owner, repo, runId) {
+  closeModal('browse-modal');
+  document.getElementById('analyze-conn').value = conn;
+  document.getElementById('analyze-owner').value = owner;
+  document.getElementById('analyze-repo').value = repo;
+  document.getElementById('analyze-run-id').value = runId;
+  document.getElementById('analyze-modal').classList.remove('hidden');
+  document.getElementById('analysis-progress').style.display = 'none';
+  document.getElementById('analyze-form').style.display = 'block';
+}
+
+// ===== Utilities =====
+function togglePlatformFields() {
+  document.querySelectorAll('.platform-fields').forEach(el => el.classList.remove('active'));
+  document.getElementById('fields-' + document.getElementById('conn-platform').value).classList.add('active');
+}
+
+function closeModal(id) {
+  document.getElementById(id).classList.add('hidden');
+}
+
+// Close modals on overlay click
+document.addEventListener('click', e => {
+  if (e.target.classList.contains('modal-overlay')) {
+    e.target.classList.add('hidden');
+  }
+});
+
+function toast(msg, type) {
+  const container = document.getElementById('toast-container');
+  const el = document.createElement('div');
+  el.className = 'toast ' + (type || 'info');
+  el.textContent = msg;
+  container.appendChild(el);
+  setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity 0.3s'; setTimeout(() => el.remove(), 300); }, 3500);
+}
+
+function esc(s) {
+  if (!s) return '';
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
 </script>
 </body>
 </html>

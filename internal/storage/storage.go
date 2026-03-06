@@ -333,6 +333,62 @@ func (s *DB) ListAnalysisHistory(connectionName string) ([]AnalysisRecord, error
 	return records, rows.Err()
 }
 
+// UpdateFindingStatus updates the status of a finding by ID.
+func (s *DB) UpdateFindingStatus(id int64, status string) error {
+	falsePos := 0
+	if status == "false_positive" {
+		falsePos = 1
+	}
+	result, err := s.db.Exec(
+		`UPDATE security_findings SET status=?, false_positive=? WHERE id=?`,
+		status, falsePos, id,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update finding: %w", err)
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return fmt.Errorf("finding %d not found", id)
+	}
+	return nil
+}
+
+// DeleteFinding removes a finding by ID.
+func (s *DB) DeleteFinding(id int64) error {
+	result, err := s.db.Exec(`DELETE FROM security_findings WHERE id=?`, id)
+	if err != nil {
+		return fmt.Errorf("failed to delete finding: %w", err)
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return fmt.Errorf("finding %d not found", id)
+	}
+	return nil
+}
+
+// GetFindingStats returns aggregate counts of findings by severity and status.
+func (s *DB) GetFindingStats() (map[string]int, error) {
+	stats := make(map[string]int)
+	rows, err := s.db.Query(`SELECT severity, COUNT(*) FROM security_findings WHERE status != 'false_positive' GROUP BY severity`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var sev string
+		var count int
+		if err := rows.Scan(&sev, &count); err != nil {
+			return nil, err
+		}
+		stats[sev] = count
+	}
+	// Total open
+	var openCount int
+	s.db.QueryRow(`SELECT COUNT(*) FROM security_findings WHERE status = 'open'`).Scan(&openCount)
+	stats["open"] = openCount
+	return stats, rows.Err()
+}
+
 // Close closes the database.
 func (s *DB) Close() error {
 	return s.db.Close()

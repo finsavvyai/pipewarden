@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -346,6 +347,182 @@ func main() {
 			history = []storage.AnalysisRecord{}
 		}
 		jsonOK(w, map[string]interface{}{"history": history, "count": len(history)})
+	})
+
+	// Update finding status (PATCH /api/v1/analysis/findings/{id})
+	mux.HandleFunc("/api/v1/analysis/findings/", func(w http.ResponseWriter, r *http.Request) {
+		idStr := strings.TrimPrefix(r.URL.Path, "/api/v1/analysis/findings/")
+		id, err := strconv.ParseInt(idStr, 10, 64)
+		if err != nil {
+			jsonError(w, "invalid finding ID", http.StatusBadRequest)
+			return
+		}
+		switch r.Method {
+		case http.MethodPatch:
+			var req struct {
+				Status string `json:"status"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				jsonError(w, "invalid JSON", http.StatusBadRequest)
+				return
+			}
+			validStatuses := map[string]bool{"open": true, "acknowledged": true, "resolved": true, "false_positive": true}
+			if !validStatuses[req.Status] {
+				jsonError(w, "invalid status: must be open, acknowledged, resolved, or false_positive", http.StatusBadRequest)
+				return
+			}
+			if err := db.UpdateFindingStatus(id, req.Status); err != nil {
+				jsonError(w, err.Error(), http.StatusNotFound)
+				return
+			}
+			jsonOK(w, map[string]interface{}{"id": id, "status": req.Status})
+		case http.MethodDelete:
+			if err := db.DeleteFinding(id); err != nil {
+				jsonError(w, err.Error(), http.StatusNotFound)
+				return
+			}
+			jsonOK(w, map[string]string{"status": "deleted"})
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+
+	// Finding stats
+	mux.HandleFunc("/api/v1/analysis/stats", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		stats, err := db.GetFindingStats()
+		if err != nil {
+			jsonError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		jsonOK(w, stats)
+	})
+
+	// Pipeline browser: list runs for a connection/repo
+	mux.HandleFunc("/api/v1/pipelines/runs", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		connName := r.URL.Query().Get("connection")
+		owner := r.URL.Query().Get("owner")
+		repo := r.URL.Query().Get("repo")
+		limitStr := r.URL.Query().Get("limit")
+		if connName == "" || owner == "" || repo == "" {
+			jsonError(w, "connection, owner, and repo are required", http.StatusBadRequest)
+			return
+		}
+		limit := 10
+		if limitStr != "" {
+			if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 50 {
+				limit = l
+			}
+		}
+		conn, err := manager.Get(connName)
+		if err != nil {
+			jsonError(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+		defer cancel()
+		runs, err := conn.Provider.ListPipelineRuns(ctx, owner, repo, limit)
+		if err != nil {
+			jsonError(w, fmt.Sprintf("failed to list runs: %v", err), http.StatusBadGateway)
+			return
+		}
+		jsonOK(w, map[string]interface{}{"runs": runs, "count": len(runs)})
+	})
+
+	// Pipeline browser: list pipelines/workflows
+	mux.HandleFunc("/api/v1/pipelines", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		connName := r.URL.Query().Get("connection")
+		owner := r.URL.Query().Get("owner")
+		repo := r.URL.Query().Get("repo")
+		if connName == "" || owner == "" || repo == "" {
+			jsonError(w, "connection, owner, and repo are required", http.StatusBadRequest)
+			return
+		}
+		conn, err := manager.Get(connName)
+		if err != nil {
+			jsonError(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+		defer cancel()
+		pipelines, err := conn.Provider.ListPipelines(ctx, owner, repo)
+		if err != nil {
+			jsonError(w, fmt.Sprintf("failed to list pipelines: %v", err), http.StatusBadGateway)
+			return
+		}
+		jsonOK(w, map[string]interface{}{"pipelines": pipelines, "count": len(pipelines)})
+	})
+
+	// Connection update (PUT)
+	mux.HandleFunc("/api/v1/connections/update", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var req struct {
+			Name        string `json:"name"`
+			Platform    string `json:"platform"`
+			Token       string `json:"token"`
+			Username    string `json:"username"`
+			AppPassword string `json:"app_password"`
+			BaseURL     string `json:"base_url"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			jsonError(w, "invalid JSON", http.StatusBadRequest)
+			return
+		}
+		if req.Name == "" {
+			jsonError(w, "name is required", http.StatusBadRequest)
+			return
+		}
+		// Load current record to fill in unchanged fields
+		existing, err := db.GetByName(req.Name)
+		if err != nil {
+			jsonError(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		if req.Platform == "" {
+			req.Platform = existing.Platform
+		}
+		if req.Token == "" {
+			req.Token = existing.Token
+		}
+		if req.Username == "" {
+			req.Username = existing.Username
+		}
+		if req.AppPassword == "" {
+			req.AppPassword = existing.AppPassword
+		}
+		// Allow clearing base_url by sending empty, but if not sent use existing
+		rec := &storage.ConnectionRecord{
+			Name:        req.Name,
+			Platform:    req.Platform,
+			Token:       req.Token,
+			Username:    req.Username,
+			AppPassword: req.AppPassword,
+			BaseURL:     req.BaseURL,
+		}
+		if err := db.Update(rec); err != nil {
+			jsonError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		// Rebuild provider in memory
+		provider := buildProvider(req.Platform, req.Token, req.Username, req.AppPassword, req.BaseURL, logger)
+		if provider != nil {
+			manager.Replace(req.Name, provider)
+		}
+		jsonOK(w, map[string]string{"name": req.Name, "status": "updated"})
 	})
 
 	server := &http.Server{

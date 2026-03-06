@@ -189,6 +189,196 @@ func TestPersistenceAcrossReopen(t *testing.T) {
 	}
 }
 
+func TestFindingLifecycle(t *testing.T) {
+	db := newTestDB(t)
+
+	// Create a finding
+	f := &FindingRecord{
+		ConnectionName: "gh-main",
+		RunID:          "42",
+		Severity:       "high",
+		Category:       "secrets",
+		Title:          "Hardcoded secret",
+		Description:    "AWS key found in logs",
+		Remediation:    "Use secrets manager",
+		Confidence:     0.95,
+		Status:         "open",
+	}
+	if err := db.CreateFinding(f); err != nil {
+		t.Fatalf("CreateFinding failed: %v", err)
+	}
+	if f.ID == 0 {
+		t.Error("expected non-zero ID")
+	}
+
+	// List findings
+	findings, err := db.ListFindings("")
+	if err != nil {
+		t.Fatalf("ListFindings failed: %v", err)
+	}
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding, got %d", len(findings))
+	}
+	if findings[0].Status != "open" {
+		t.Errorf("expected open status, got %s", findings[0].Status)
+	}
+
+	// Update status to acknowledged
+	if err := db.UpdateFindingStatus(f.ID, "acknowledged"); err != nil {
+		t.Fatalf("UpdateFindingStatus failed: %v", err)
+	}
+	findings, _ = db.ListFindings("")
+	if findings[0].Status != "acknowledged" {
+		t.Errorf("expected acknowledged, got %s", findings[0].Status)
+	}
+
+	// Update to false_positive should set false_positive flag
+	if err := db.UpdateFindingStatus(f.ID, "false_positive"); err != nil {
+		t.Fatalf("UpdateFindingStatus failed: %v", err)
+	}
+	findings, _ = db.ListFindings("")
+	if findings[0].Status != "false_positive" {
+		t.Errorf("expected false_positive, got %s", findings[0].Status)
+	}
+	if !findings[0].FalsePositive {
+		t.Error("expected FalsePositive flag to be true")
+	}
+
+	// Resolve
+	if err := db.UpdateFindingStatus(f.ID, "resolved"); err != nil {
+		t.Fatalf("UpdateFindingStatus failed: %v", err)
+	}
+	findings, _ = db.ListFindings("")
+	if findings[0].Status != "resolved" {
+		t.Errorf("expected resolved, got %s", findings[0].Status)
+	}
+
+	// Update nonexistent
+	err = db.UpdateFindingStatus(999, "open")
+	if err == nil {
+		t.Error("expected error for nonexistent finding")
+	}
+}
+
+func TestDeleteFinding(t *testing.T) {
+	db := newTestDB(t)
+
+	f := &FindingRecord{
+		ConnectionName: "gh-main",
+		RunID:          "42",
+		Severity:       "medium",
+		Category:       "config",
+		Title:          "Insecure config",
+		Description:    "Debug enabled",
+		Status:         "open",
+	}
+	db.CreateFinding(f)
+
+	if err := db.DeleteFinding(f.ID); err != nil {
+		t.Fatalf("DeleteFinding failed: %v", err)
+	}
+
+	findings, _ := db.ListFindings("")
+	if len(findings) != 0 {
+		t.Errorf("expected 0 findings after delete, got %d", len(findings))
+	}
+
+	// Delete nonexistent
+	err := db.DeleteFinding(999)
+	if err == nil {
+		t.Error("expected error for nonexistent finding")
+	}
+}
+
+func TestGetFindingStats(t *testing.T) {
+	db := newTestDB(t)
+
+	db.CreateFinding(&FindingRecord{ConnectionName: "c1", RunID: "1", Severity: "critical", Category: "secrets", Title: "t1", Description: "d1", Status: "open"})
+	db.CreateFinding(&FindingRecord{ConnectionName: "c1", RunID: "1", Severity: "critical", Category: "secrets", Title: "t2", Description: "d2", Status: "open"})
+	db.CreateFinding(&FindingRecord{ConnectionName: "c1", RunID: "1", Severity: "high", Category: "config", Title: "t3", Description: "d3", Status: "open"})
+	db.CreateFinding(&FindingRecord{ConnectionName: "c1", RunID: "1", Severity: "low", Category: "config", Title: "t4", Description: "d4", Status: "resolved"})
+
+	stats, err := db.GetFindingStats()
+	if err != nil {
+		t.Fatalf("GetFindingStats failed: %v", err)
+	}
+	if stats["critical"] != 2 {
+		t.Errorf("expected 2 critical, got %d", stats["critical"])
+	}
+	if stats["high"] != 1 {
+		t.Errorf("expected 1 high, got %d", stats["high"])
+	}
+	if stats["open"] != 3 {
+		t.Errorf("expected 3 open, got %d", stats["open"])
+	}
+	if stats["low"] != 1 {
+		t.Errorf("expected 1 low, got %d", stats["low"])
+	}
+}
+
+func TestAnalysisHistory(t *testing.T) {
+	db := newTestDB(t)
+
+	rec := &AnalysisRecord{
+		ConnectionName: "gh-main",
+		RunID:          "42",
+		Summary:        "Found 3 issues",
+		RiskScore:      65,
+		FindingsCount:  3,
+		TokensUsed:     2500,
+		Model:          "claude-sonnet-4-20250514",
+		DurationMS:     1500,
+	}
+	if err := db.CreateAnalysisRecord(rec); err != nil {
+		t.Fatalf("CreateAnalysisRecord failed: %v", err)
+	}
+	if rec.ID == 0 {
+		t.Error("expected non-zero ID")
+	}
+
+	// List all
+	history, err := db.ListAnalysisHistory("")
+	if err != nil {
+		t.Fatalf("ListAnalysisHistory failed: %v", err)
+	}
+	if len(history) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(history))
+	}
+	if history[0].RiskScore != 65 {
+		t.Errorf("expected risk score 65, got %d", history[0].RiskScore)
+	}
+
+	// List by connection
+	history, _ = db.ListAnalysisHistory("gh-main")
+	if len(history) != 1 {
+		t.Errorf("expected 1 record for gh-main, got %d", len(history))
+	}
+	history, _ = db.ListAnalysisHistory("nonexistent")
+	if len(history) != 0 {
+		t.Errorf("expected 0 records, got %d", len(history))
+	}
+}
+
+func TestFindingsByConnection(t *testing.T) {
+	db := newTestDB(t)
+
+	db.CreateFinding(&FindingRecord{ConnectionName: "gh-main", RunID: "1", Severity: "high", Category: "secrets", Title: "t1", Description: "d1", Status: "open"})
+	db.CreateFinding(&FindingRecord{ConnectionName: "gl-prod", RunID: "2", Severity: "low", Category: "config", Title: "t2", Description: "d2", Status: "open"})
+
+	f1, _ := db.ListFindings("gh-main")
+	if len(f1) != 1 {
+		t.Errorf("expected 1 finding for gh-main, got %d", len(f1))
+	}
+	f2, _ := db.ListFindings("gl-prod")
+	if len(f2) != 1 {
+		t.Errorf("expected 1 finding for gl-prod, got %d", len(f2))
+	}
+	all, _ := db.ListFindings("")
+	if len(all) != 2 {
+		t.Errorf("expected 2 total findings, got %d", len(all))
+	}
+}
+
 func TestDBFileCreation(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "new.db")
