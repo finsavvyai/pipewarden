@@ -16,6 +16,14 @@ test:
 lint:
 	golangci-lint run
 
+# Test real connections (set GITHUB_TOKEN, GITLAB_TOKEN, BITBUCKET_USERNAME/BITBUCKET_APP_PASSWORD)
+test-connections:
+	go run cmd/testconnections/main.go
+
+# Run only integration tests against real APIs (requires credentials)
+test-integration:
+	go test -v -run TestReal ./internal/integrations/
+
 # Clean build artifacts
 clean:
 	rm -rf bin/
