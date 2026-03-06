@@ -50,56 +50,224 @@ func TestNewManager(t *testing.T) {
 	if m == nil {
 		t.Fatal("expected non-nil manager")
 	}
-	if len(m.Platforms()) != 0 {
-		t.Errorf("expected 0 platforms, got %d", len(m.Platforms()))
+	if m.Count() != 0 {
+		t.Errorf("expected 0 connections, got %d", m.Count())
 	}
 }
 
-func TestRegisterAndGet(t *testing.T) {
+func TestAddAndGet(t *testing.T) {
 	m := NewManager(newTestLogger())
 	mock := &mockProvider{platform: PlatformGitHub}
-	m.Register(mock)
+	if err := m.Add("gh-main", mock); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
-	p, err := m.Get(PlatformGitHub)
+	conn, err := m.Get("gh-main")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if p.Name() != PlatformGitHub {
-		t.Errorf("expected github, got %s", p.Name())
+	if conn.Name != "gh-main" {
+		t.Errorf("expected gh-main, got %s", conn.Name)
+	}
+	if conn.Platform != PlatformGitHub {
+		t.Errorf("expected github, got %s", conn.Platform)
+	}
+}
+
+func TestAddDuplicate(t *testing.T) {
+	m := NewManager(newTestLogger())
+	mock := &mockProvider{platform: PlatformGitHub}
+	m.Add("gh-main", mock)
+
+	err := m.Add("gh-main", mock)
+	if err == nil {
+		t.Error("expected error for duplicate name")
+	}
+}
+
+func TestReplace(t *testing.T) {
+	m := NewManager(newTestLogger())
+	mock1 := &mockProvider{platform: PlatformGitHub, connectStatus: &ConnectionStatus{User: "user1"}}
+	mock2 := &mockProvider{platform: PlatformGitHub, connectStatus: &ConnectionStatus{User: "user2"}}
+
+	m.Add("gh-main", mock1)
+	m.Replace("gh-main", mock2)
+
+	if m.Count() != 1 {
+		t.Errorf("expected 1 connection, got %d", m.Count())
+	}
+
+	status, _ := m.TestConnection(context.Background(), "gh-main")
+	if status.User != "user2" {
+		t.Errorf("expected user2 after replace, got %s", status.User)
+	}
+}
+
+func TestRemove(t *testing.T) {
+	m := NewManager(newTestLogger())
+	m.Add("gh-main", &mockProvider{platform: PlatformGitHub})
+
+	if err := m.Remove("gh-main"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if m.Count() != 0 {
+		t.Error("expected 0 connections after remove")
+	}
+}
+
+func TestRemoveNotFound(t *testing.T) {
+	m := NewManager(newTestLogger())
+	err := m.Remove("nonexistent")
+	if err == nil {
+		t.Error("expected error for removing nonexistent connection")
 	}
 }
 
 func TestGetNotFound(t *testing.T) {
 	m := NewManager(newTestLogger())
-	_, err := m.Get(PlatformBitbucket)
+	_, err := m.Get("nonexistent")
 	if err == nil {
-		t.Error("expected error for missing provider")
+		t.Error("expected error for missing connection")
 	}
 }
 
-func TestPlatforms(t *testing.T) {
+func TestList(t *testing.T) {
 	m := NewManager(newTestLogger())
-	m.Register(&mockProvider{platform: PlatformGitHub})
-	m.Register(&mockProvider{platform: PlatformBitbucket})
+	m.Add("gh-main", &mockProvider{platform: PlatformGitHub})
+	m.Add("gl-cloud", &mockProvider{platform: PlatformGitLab})
+	m.Add("bb-team", &mockProvider{platform: PlatformBitbucket})
 
-	platforms := m.Platforms()
-	if len(platforms) != 2 {
-		t.Fatalf("expected 2 platforms, got %d", len(platforms))
-	}
-
-	found := make(map[Platform]bool)
-	for _, p := range platforms {
-		found[p] = true
-	}
-	if !found[PlatformGitHub] || !found[PlatformBitbucket] {
-		t.Error("expected both github and bitbucket platforms")
+	conns := m.List()
+	if len(conns) != 3 {
+		t.Fatalf("expected 3 connections, got %d", len(conns))
 	}
 }
 
-func TestTestAllConnections_AllSuccess(t *testing.T) {
+func TestGetByPlatform(t *testing.T) {
+	m := NewManager(newTestLogger())
+	m.Add("gh-main", &mockProvider{platform: PlatformGitHub})
+	m.Add("gh-enterprise", &mockProvider{platform: PlatformGitHub})
+	m.Add("gl-cloud", &mockProvider{platform: PlatformGitLab})
+
+	ghConns := m.GetByPlatform(PlatformGitHub)
+	if len(ghConns) != 2 {
+		t.Fatalf("expected 2 github connections, got %d", len(ghConns))
+	}
+
+	glConns := m.GetByPlatform(PlatformGitLab)
+	if len(glConns) != 1 {
+		t.Fatalf("expected 1 gitlab connection, got %d", len(glConns))
+	}
+
+	bbConns := m.GetByPlatform(PlatformBitbucket)
+	if len(bbConns) != 0 {
+		t.Fatalf("expected 0 bitbucket connections, got %d", len(bbConns))
+	}
+}
+
+func TestMultipleConnectionsSamePlatform(t *testing.T) {
 	m := NewManager(newTestLogger())
 
-	m.Register(&mockProvider{
+	m.Add("gh-org-a", &mockProvider{
+		platform: PlatformGitHub,
+		connectStatus: &ConnectionStatus{
+			Connected: true,
+			Platform:  PlatformGitHub,
+			User:      "org-a-bot",
+		},
+	})
+	m.Add("gh-org-b", &mockProvider{
+		platform: PlatformGitHub,
+		connectStatus: &ConnectionStatus{
+			Connected: true,
+			Platform:  PlatformGitHub,
+			User:      "org-b-bot",
+		},
+	})
+	m.Add("gh-personal", &mockProvider{
+		platform: PlatformGitHub,
+		connectStatus: &ConnectionStatus{
+			Connected: true,
+			Platform:  PlatformGitHub,
+			User:      "personal",
+		},
+	})
+
+	if m.Count() != 3 {
+		t.Fatalf("expected 3 connections, got %d", m.Count())
+	}
+
+	results := m.TestByPlatform(context.Background(), PlatformGitHub)
+	if len(results) != 3 {
+		t.Fatalf("expected 3 results, got %d", len(results))
+	}
+
+	users := make(map[string]bool)
+	for _, status := range results {
+		users[status.User] = true
+	}
+	if !users["org-a-bot"] || !users["org-b-bot"] || !users["personal"] {
+		t.Errorf("missing expected users, got %v", users)
+	}
+}
+
+func TestTestConnection_Single(t *testing.T) {
+	m := NewManager(newTestLogger())
+	m.Add("gh-main", &mockProvider{
+		platform: PlatformGitHub,
+		connectStatus: &ConnectionStatus{
+			Connected: true,
+			Platform:  PlatformGitHub,
+			User:      "testuser",
+		},
+	})
+
+	status, err := m.TestConnection(context.Background(), "gh-main")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !status.Connected {
+		t.Error("expected connected")
+	}
+	if status.ConnectionName != "gh-main" {
+		t.Errorf("expected connection name gh-main, got %s", status.ConnectionName)
+	}
+}
+
+func TestTestConnection_NotFound(t *testing.T) {
+	m := NewManager(newTestLogger())
+	_, err := m.TestConnection(context.Background(), "nonexistent")
+	if err == nil {
+		t.Error("expected error for nonexistent connection")
+	}
+}
+
+func TestTestConnection_ProviderError(t *testing.T) {
+	m := NewManager(newTestLogger())
+	m.Add("gh-broken", &mockProvider{
+		platform:   PlatformGitHub,
+		connectErr: fmt.Errorf("token expired"),
+	})
+
+	status, err := m.TestConnection(context.Background(), "gh-broken")
+	if err != nil {
+		t.Fatalf("expected nil error (graceful), got %v", err)
+	}
+	if status.Connected {
+		t.Error("expected not connected")
+	}
+	if status.Message != "token expired" {
+		t.Errorf("expected 'token expired', got %s", status.Message)
+	}
+	if status.ConnectionName != "gh-broken" {
+		t.Errorf("expected connection name gh-broken, got %s", status.ConnectionName)
+	}
+}
+
+func TestTestAllConnections_MultiPlatform(t *testing.T) {
+	m := NewManager(newTestLogger())
+
+	m.Add("gh-main", &mockProvider{
 		platform: PlatformGitHub,
 		connectStatus: &ConnectionStatus{
 			Connected: true,
@@ -108,7 +276,16 @@ func TestTestAllConnections_AllSuccess(t *testing.T) {
 			Latency:   50 * time.Millisecond,
 		},
 	})
-	m.Register(&mockProvider{
+	m.Add("gh-enterprise", &mockProvider{
+		platform: PlatformGitHub,
+		connectStatus: &ConnectionStatus{
+			Connected: true,
+			Platform:  PlatformGitHub,
+			User:      "ghentuser",
+			Latency:   80 * time.Millisecond,
+		},
+	})
+	m.Add("bb-team", &mockProvider{
 		platform: PlatformBitbucket,
 		connectStatus: &ConnectionStatus{
 			Connected: true,
@@ -119,21 +296,25 @@ func TestTestAllConnections_AllSuccess(t *testing.T) {
 	})
 
 	results := m.TestAllConnections(context.Background())
-	if len(results) != 2 {
-		t.Fatalf("expected 2 results, got %d", len(results))
+	if len(results) != 3 {
+		t.Fatalf("expected 3 results, got %d", len(results))
 	}
-	if !results[PlatformGitHub].Connected {
-		t.Error("expected github connected")
+
+	if !results["gh-main"].Connected {
+		t.Error("expected gh-main connected")
 	}
-	if !results[PlatformBitbucket].Connected {
-		t.Error("expected bitbucket connected")
+	if !results["gh-enterprise"].Connected {
+		t.Error("expected gh-enterprise connected")
+	}
+	if !results["bb-team"].Connected {
+		t.Error("expected bb-team connected")
 	}
 }
 
 func TestTestAllConnections_WithError(t *testing.T) {
 	m := NewManager(newTestLogger())
 
-	m.Register(&mockProvider{
+	m.Add("gh-broken", &mockProvider{
 		platform:   PlatformGitHub,
 		connectErr: fmt.Errorf("network timeout"),
 	})
@@ -142,11 +323,11 @@ func TestTestAllConnections_WithError(t *testing.T) {
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
 	}
-	if results[PlatformGitHub].Connected {
-		t.Error("expected github not connected due to error")
+	if results["gh-broken"].Connected {
+		t.Error("expected not connected due to error")
 	}
-	if results[PlatformGitHub].Message != "network timeout" {
-		t.Errorf("expected 'network timeout' message, got %s", results[PlatformGitHub].Message)
+	if results["gh-broken"].Message != "network timeout" {
+		t.Errorf("expected 'network timeout', got %s", results["gh-broken"].Message)
 	}
 }
 
@@ -158,33 +339,34 @@ func TestTestAllConnections_Empty(t *testing.T) {
 	}
 }
 
-func TestRegisterOverwrite(t *testing.T) {
+func TestTestByPlatform(t *testing.T) {
 	m := NewManager(newTestLogger())
 
-	mock1 := &mockProvider{
-		platform: PlatformGitHub,
-		connectStatus: &ConnectionStatus{
-			Connected: true,
-			User:      "user1",
-		},
-	}
-	mock2 := &mockProvider{
-		platform: PlatformGitHub,
-		connectStatus: &ConnectionStatus{
-			Connected: true,
-			User:      "user2",
-		},
-	}
+	m.Add("gh-1", &mockProvider{
+		platform:      PlatformGitHub,
+		connectStatus: &ConnectionStatus{Connected: true, Platform: PlatformGitHub, User: "u1"},
+	})
+	m.Add("gh-2", &mockProvider{
+		platform:      PlatformGitHub,
+		connectStatus: &ConnectionStatus{Connected: true, Platform: PlatformGitHub, User: "u2"},
+	})
+	m.Add("gl-1", &mockProvider{
+		platform:      PlatformGitLab,
+		connectStatus: &ConnectionStatus{Connected: true, Platform: PlatformGitLab, User: "u3"},
+	})
 
-	m.Register(mock1)
-	m.Register(mock2)
-
-	if len(m.Platforms()) != 1 {
-		t.Errorf("expected 1 platform after overwrite, got %d", len(m.Platforms()))
+	ghResults := m.TestByPlatform(context.Background(), PlatformGitHub)
+	if len(ghResults) != 2 {
+		t.Fatalf("expected 2 github results, got %d", len(ghResults))
 	}
 
-	results := m.TestAllConnections(context.Background())
-	if results[PlatformGitHub].User != "user2" {
-		t.Errorf("expected user2 after overwrite, got %s", results[PlatformGitHub].User)
+	glResults := m.TestByPlatform(context.Background(), PlatformGitLab)
+	if len(glResults) != 1 {
+		t.Fatalf("expected 1 gitlab result, got %d", len(glResults))
+	}
+
+	bbResults := m.TestByPlatform(context.Background(), PlatformBitbucket)
+	if len(bbResults) != 0 {
+		t.Fatalf("expected 0 bitbucket results, got %d", len(bbResults))
 	}
 }

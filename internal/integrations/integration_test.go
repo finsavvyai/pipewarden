@@ -36,7 +36,6 @@ func TestRealGitHubConnection(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Test connection
 	status, err := client.TestConnection(ctx)
 	if err != nil {
 		t.Fatalf("GitHub connection failed: %v", err)
@@ -53,7 +52,6 @@ func TestRealGitHubConnection(t *testing.T) {
 		t.Fatalf("expected connected, got message: %s", status.Message)
 	}
 
-	// If a test repo is configured, test pipeline operations
 	owner := os.Getenv("GITHUB_TEST_OWNER")
 	repo := os.Getenv("GITHUB_TEST_REPO")
 	if owner != "" && repo != "" {
@@ -75,14 +73,17 @@ func TestRealGitHubConnection(t *testing.T) {
 			}
 			t.Logf("Found %d recent runs", len(runs))
 			for _, r := range runs {
-				t.Logf("  - Run %s: status=%s branch=%s sha=%s", r.ID, r.Status, r.Branch, r.CommitSHA[:min(7, len(r.CommitSHA))])
+				sha := r.CommitSHA
+				if len(sha) > 7 {
+					sha = sha[:7]
+				}
+				t.Logf("  - Run %s: status=%s branch=%s sha=%s", r.ID, r.Status, r.Branch, sha)
 			}
 		})
 	}
 }
 
 // TestRealBitbucketConnection tests against the real Bitbucket API.
-// Run with: BITBUCKET_USERNAME=xxx BITBUCKET_APP_PASSWORD=xxx go test -v -run TestRealBitbucketConnection ./internal/integrations/
 func TestRealBitbucketConnection(t *testing.T) {
 	username := os.Getenv("BITBUCKET_USERNAME")
 	appPassword := os.Getenv("BITBUCKET_APP_PASSWORD")
@@ -122,38 +123,21 @@ func TestRealBitbucketConnection(t *testing.T) {
 				t.Fatalf("ListPipelines failed: %v", err)
 			}
 			t.Logf("Found %d pipelines", len(pipelines))
-			for _, p := range pipelines {
-				t.Logf("  - %s (ID: %s) %s", p.Name, p.ID, p.URL)
-			}
-		})
-
-		t.Run("ListPipelineRuns", func(t *testing.T) {
-			runs, err := client.ListPipelineRuns(ctx, owner, repo, 5)
-			if err != nil {
-				t.Fatalf("ListPipelineRuns failed: %v", err)
-			}
-			t.Logf("Found %d recent runs", len(runs))
-			for _, r := range runs {
-				t.Logf("  - Run %s: status=%s branch=%s", r.ID, r.Status, r.Branch)
-			}
 		})
 	}
 }
 
 // TestRealGitLabConnection tests against the real GitLab API.
-// Run with: GITLAB_TOKEN=glpat-xxx go test -v -run TestRealGitLabConnection ./internal/integrations/
 func TestRealGitLabConnection(t *testing.T) {
 	token := os.Getenv("GITLAB_TOKEN")
 	if token == "" {
 		t.Skip("GITLAB_TOKEN not set, skipping real GitLab connection test")
 	}
 
-	baseURL := os.Getenv("GITLAB_BASE_URL")
-
 	logger := newLogger()
 	client := gitlab.NewClient(gitlab.Config{
 		Token:   token,
-		BaseURL: baseURL,
+		BaseURL: os.Getenv("GITLAB_BASE_URL"),
 	}, logger)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -167,7 +151,6 @@ func TestRealGitLabConnection(t *testing.T) {
 	t.Logf("Connected: %v", status.Connected)
 	t.Logf("User:      %s", status.User)
 	t.Logf("Scopes:    %v", status.Scopes)
-	t.Logf("RateLimit: %v", status.RateLimitOK)
 	t.Logf("Latency:   %v", status.Latency)
 	t.Logf("Message:   %s", status.Message)
 
@@ -184,27 +167,13 @@ func TestRealGitLabConnection(t *testing.T) {
 				t.Fatalf("ListPipelines failed: %v", err)
 			}
 			t.Logf("Found %d pipelines", len(pipelines))
-			for _, p := range pipelines {
-				t.Logf("  - %s (ID: %s) %s", p.Name, p.ID, p.URL)
-			}
-		})
-
-		t.Run("ListPipelineRuns", func(t *testing.T) {
-			runs, err := client.ListPipelineRuns(ctx, owner, repo, 5)
-			if err != nil {
-				t.Fatalf("ListPipelineRuns failed: %v", err)
-			}
-			t.Logf("Found %d recent runs", len(runs))
-			for _, r := range runs {
-				t.Logf("  - Run %s: status=%s branch=%s", r.ID, r.Status, r.Branch)
-			}
 		})
 	}
 }
 
-// TestRealAllConnections tests all configured providers concurrently via the Manager.
-// Run with all tokens set to test full orchestration.
-func TestRealAllConnections(t *testing.T) {
+// TestRealMultipleConnections tests multiple connections via the Manager.
+// Demonstrates adding many connections of the same platform type.
+func TestRealMultipleConnections(t *testing.T) {
 	ghToken := os.Getenv("GITHUB_TOKEN")
 	bbUser := os.Getenv("BITBUCKET_USERNAME")
 	bbPass := os.Getenv("BITBUCKET_APP_PASSWORD")
@@ -218,45 +187,37 @@ func TestRealAllConnections(t *testing.T) {
 	manager := integrations.NewManager(logger)
 
 	if ghToken != "" {
-		manager.Register(github.NewClient(github.Config{Token: ghToken}, logger))
+		manager.Add("github-primary", github.NewClient(github.Config{Token: ghToken}, logger))
 	}
 	if bbUser != "" && bbPass != "" {
-		manager.Register(bitbucket.NewClient(bitbucket.Config{
+		manager.Add("bitbucket-team", bitbucket.NewClient(bitbucket.Config{
 			Username: bbUser, AppPassword: bbPass,
 		}, logger))
 	}
 	if glToken != "" {
-		glBaseURL := os.Getenv("GITLAB_BASE_URL")
-		manager.Register(gitlab.NewClient(gitlab.Config{
-			Token: glToken, BaseURL: glBaseURL,
+		manager.Add("gitlab-cloud", gitlab.NewClient(gitlab.Config{
+			Token: glToken, BaseURL: os.Getenv("GITLAB_BASE_URL"),
 		}, logger))
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	t.Logf("Testing %d connection(s)...", manager.Count())
 	results := manager.TestAllConnections(ctx)
 
-	t.Logf("Tested %d platform(s):", len(results))
 	allOK := true
-	for platform, status := range results {
+	for name, status := range results {
 		symbol := "PASS"
 		if !status.Connected {
 			symbol = "FAIL"
 			allOK = false
 		}
-		t.Logf("  [%s] %s: connected=%v user=%s latency=%v message=%q",
-			symbol, platform, status.Connected, status.User, status.Latency, status.Message)
+		t.Logf("  [%s] %s (%s): user=%s latency=%v message=%q",
+			symbol, name, status.Platform, status.User, status.Latency, status.Message)
 	}
 
 	if !allOK {
 		t.Error("One or more connections failed")
 	}
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

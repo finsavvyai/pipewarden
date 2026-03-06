@@ -17,17 +17,32 @@ auth:
 logging:
   level: debug
   json: false
-integrations:
-  github:
-    enabled: false
-    token: ""
-    baseURL: "https://api.github.com"
-  bitbucket:
-    enabled: false
-    username: ""
-    appPassword: ""
-    baseURL: "https://api.bitbucket.org/2.0"
-  gitlab:
-    enabled: false
-    token: ""
-    baseURL: "https://gitlab.com/api/v4"
+
+# connections is a list — add as many as you need per platform.
+# Each connection has a unique name, platform type, and credentials.
+connections:
+  # - name: "github-main"
+  #   platform: "github"
+  #   token: "ghp_xxx"
+  #   baseURL: "https://api.github.com"
+  #
+  # - name: "github-enterprise"
+  #   platform: "github"
+  #   token: "ghp_yyy"
+  #   baseURL: "https://github.mycompany.com/api/v3"
+  #
+  # - name: "gitlab-cloud"
+  #   platform: "gitlab"
+  #   token: "glpat-xxx"
+  #   baseURL: "https://gitlab.com/api/v4"
+  #
+  # - name: "gitlab-self-hosted"
+  #   platform: "gitlab"
+  #   token: "glpat-yyy"
+  #   baseURL: "https://gitlab.internal.com/api/v4"
+  #
+  # - name: "bitbucket-team"
+  #   platform: "bitbucket"
+  #   username: "myuser"
+  #   appPassword: "xxx"
+  #   baseURL: "https://api.bitbucket.org/2.0"

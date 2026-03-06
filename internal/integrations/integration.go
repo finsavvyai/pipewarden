@@ -18,12 +18,12 @@ const (
 type PipelineStatus string
 
 const (
-	StatusPending    PipelineStatus = "pending"
-	StatusRunning    PipelineStatus = "running"
-	StatusSuccess    PipelineStatus = "success"
-	StatusFailed     PipelineStatus = "failed"
-	StatusCancelled  PipelineStatus = "cancelled"
-	StatusUnknown    PipelineStatus = "unknown"
+	StatusPending   PipelineStatus = "pending"
+	StatusRunning   PipelineStatus = "running"
+	StatusSuccess   PipelineStatus = "success"
+	StatusFailed    PipelineStatus = "failed"
+	StatusCancelled PipelineStatus = "cancelled"
+	StatusUnknown   PipelineStatus = "unknown"
 )
 
 // Pipeline represents a CI/CD pipeline definition.
@@ -59,13 +59,21 @@ type PipelineStep struct {
 
 // ConnectionStatus holds the result of a connection test.
 type ConnectionStatus struct {
-	Connected   bool
-	Platform    Platform
-	User        string
-	Scopes      []string
-	RateLimitOK bool
-	Latency     time.Duration
-	Message     string
+	Connected      bool          `json:"connected"`
+	Platform       Platform      `json:"platform"`
+	ConnectionName string        `json:"connection_name"`
+	User           string        `json:"user,omitempty"`
+	Scopes         []string      `json:"scopes,omitempty"`
+	RateLimitOK    bool          `json:"rate_limit_ok"`
+	Latency        time.Duration `json:"latency"`
+	Message        string        `json:"message"`
+}
+
+// Connection represents a named connection to a CI/CD platform.
+type Connection struct {
+	Name     string   `json:"name"`
+	Platform Platform `json:"platform"`
+	Provider Provider `json:"-"`
 }
 
 // Provider defines the interface that all CI/CD platform integrations must implement.

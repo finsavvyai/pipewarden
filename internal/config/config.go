@@ -15,36 +15,17 @@ type Config struct {
 	Database     DatabaseConfig
 	Auth         AuthConfig
 	Logging      LoggingConfig
-	Integrations IntegrationsConfig
+	Connections  []ConnectionConfig
 }
 
-// IntegrationsConfig holds configuration for all CI/CD platform integrations
-type IntegrationsConfig struct {
-	GitHub    GitHubConfig
-	Bitbucket BitbucketConfig
-	GitLab    GitLabConfig
-}
-
-// GitLabConfig holds GitLab CI/CD integration configuration
-type GitLabConfig struct {
-	Enabled bool
-	Token   string
-	BaseURL string
-}
-
-// GitHubConfig holds GitHub Actions integration configuration
-type GitHubConfig struct {
-	Enabled bool
-	Token   string
-	BaseURL string
-}
-
-// BitbucketConfig holds Bitbucket Pipelines integration configuration
-type BitbucketConfig struct {
-	Enabled     bool
-	Username    string
-	AppPassword string
-	BaseURL     string
+// ConnectionConfig holds the configuration for a single CI/CD connection.
+type ConnectionConfig struct {
+	Name        string `mapstructure:"name"`
+	Platform    string `mapstructure:"platform"` // github, bitbucket, gitlab
+	Token       string `mapstructure:"token"`
+	Username    string `mapstructure:"username"`
+	AppPassword string `mapstructure:"appPassword"`
+	BaseURL     string `mapstructure:"baseURL"`
 }
 
 // ServerConfig holds all server related configuration
