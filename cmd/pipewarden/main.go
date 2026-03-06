@@ -68,6 +68,9 @@ func main() {
 		logger.Infow("Claude security analysis enabled", "model", cfg.Anthropic.Model)
 	}
 
+	// Setup heuristic analyzer (always available)
+	heuristicAnalyzer := analysis.NewHeuristicAnalyzer()
+
 	// Setup HTTP server
 	mux := http.NewServeMux()
 
@@ -525,6 +528,191 @@ func main() {
 		jsonOK(w, map[string]string{"name": req.Name, "status": "updated"})
 	})
 
+	// Quick heuristic analysis (no Claude needed)
+	mux.HandleFunc("/api/v1/analysis/quick", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var req analysis.AnalysisRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			jsonError(w, "invalid JSON", http.StatusBadRequest)
+			return
+		}
+		if req.ConnectionName == "" || req.Owner == "" || req.Repo == "" || req.RunID == "" {
+			jsonError(w, "connection_name, owner, repo, and run_id are required", http.StatusBadRequest)
+			return
+		}
+		conn, err := manager.Get(req.ConnectionName)
+		if err != nil {
+			jsonError(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		defer cancel()
+		run, err := conn.Provider.GetPipelineRun(ctx, req.Owner, req.Repo, req.RunID)
+		if err != nil {
+			jsonError(w, fmt.Sprintf("failed to get pipeline run: %v", err), http.StatusBadGateway)
+			return
+		}
+		result := heuristicAnalyzer.AnalyzeRun(conn, run)
+
+		// Persist findings
+		for i := range result.Findings {
+			f := &result.Findings[i]
+			rec := &storage.FindingRecord{
+				ConnectionName: f.ConnectionName,
+				RunID:          f.RunID,
+				Severity:       string(f.Severity),
+				Category:       string(f.Category),
+				Title:          f.Title,
+				Description:    f.Description,
+				Remediation:    f.Remediation,
+				File:           f.File,
+				Line:           f.Line,
+				Confidence:     f.Confidence,
+				Status:         f.Status,
+			}
+			if err := db.CreateFinding(rec); err != nil {
+				logger.Errorw("Failed to persist finding", "error", err)
+			}
+		}
+		// Persist analysis record
+		analysisRec := &storage.AnalysisRecord{
+			ConnectionName: result.ConnectionName,
+			RunID:          result.RunID,
+			Summary:        result.Summary,
+			RiskScore:      result.RiskScore,
+			FindingsCount:  len(result.Findings),
+			TokensUsed:     0,
+			Model:          "heuristic-v1",
+			DurationMS:     result.DurationMS,
+			AnalyzedAt:     result.AnalyzedAt,
+		}
+		if err := db.CreateAnalysisRecord(analysisRec); err != nil {
+			logger.Errorw("Failed to persist analysis record", "error", err)
+		}
+		jsonOK(w, result)
+	})
+
+	// Export findings as CSV
+	mux.HandleFunc("/api/v1/analysis/findings/export", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		connName := r.URL.Query().Get("connection")
+		format := r.URL.Query().Get("format")
+		if format == "" {
+			format = "csv"
+		}
+
+		findings, err := db.ListFindings(connName)
+		if err != nil {
+			jsonError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if findings == nil {
+			findings = []storage.FindingRecord{}
+		}
+
+		if format == "json" {
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Content-Disposition", "attachment; filename=pipewarden-findings.json")
+			json.NewEncoder(w).Encode(findings)
+			return
+		}
+
+		// CSV export
+		w.Header().Set("Content-Type", "text/csv")
+		w.Header().Set("Content-Disposition", "attachment; filename=pipewarden-findings.csv")
+		w.Write([]byte("ID,Connection,Run ID,Severity,Category,Title,Description,Remediation,File,Line,Confidence,Status,Created At\n"))
+		for _, f := range findings {
+			line := fmt.Sprintf("%d,%s,%s,%s,%s,%s,%s,%s,%s,%d,%.2f,%s,%s\n",
+				f.ID,
+				csvEscape(f.ConnectionName),
+				csvEscape(f.RunID),
+				f.Severity,
+				f.Category,
+				csvEscape(f.Title),
+				csvEscape(f.Description),
+				csvEscape(f.Remediation),
+				csvEscape(f.File),
+				f.Line,
+				f.Confidence,
+				f.Status,
+				f.CreatedAt.Format(time.RFC3339),
+			)
+			w.Write([]byte(line))
+		}
+	})
+
+	// Dashboard overview / trends
+	mux.HandleFunc("/api/v1/dashboard/overview", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		connCount, _ := db.Count()
+		stats, _ := db.GetFindingStats()
+		history, _ := db.ListAnalysisHistory("")
+		findings, _ := db.ListFindings("")
+
+		// Calculate overall security score (inverse of risk)
+		avgRisk := 0
+		if len(history) > 0 {
+			totalRisk := 0
+			for _, h := range history {
+				totalRisk += h.RiskScore
+			}
+			avgRisk = totalRisk / len(history)
+		}
+		securityScore := 100 - avgRisk
+
+		// Find oldest open finding
+		oldestOpen := ""
+		openCount := 0
+		for _, f := range findings {
+			if f.Status == "open" {
+				openCount++
+				if oldestOpen == "" {
+					oldestOpen = f.CreatedAt.Format(time.RFC3339)
+				}
+			}
+		}
+
+		// Recent analysis trend (last 10)
+		recentScores := make([]map[string]interface{}, 0)
+		limit := 10
+		if len(history) < limit {
+			limit = len(history)
+		}
+		for i := 0; i < limit; i++ {
+			h := history[i]
+			recentScores = append(recentScores, map[string]interface{}{
+				"date":       h.AnalyzedAt.Format("2006-01-02"),
+				"risk_score": h.RiskScore,
+				"findings":   h.FindingsCount,
+				"connection": h.ConnectionName,
+			})
+		}
+
+		// Top recommendations
+		recommendations := buildRecommendations(stats, openCount, connCount, findings)
+
+		jsonOK(w, map[string]interface{}{
+			"security_score":  securityScore,
+			"connections":     connCount,
+			"total_analyses":  len(history),
+			"total_findings":  len(findings),
+			"open_findings":   openCount,
+			"oldest_open":     oldestOpen,
+			"severity_counts": stats,
+			"recent_trend":    recentScores,
+			"recommendations": recommendations,
+		})
+	})
+
 	server := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Server.Port),
 		Handler:      mux,
@@ -594,4 +782,65 @@ func jsonError(w http.ResponseWriter, msg string, code int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	json.NewEncoder(w).Encode(map[string]string{"error": msg})
+}
+
+func csvEscape(s string) string {
+	if strings.ContainsAny(s, ",\"\n\r") {
+		return "\"" + strings.ReplaceAll(s, "\"", "\"\"") + "\""
+	}
+	return s
+}
+
+func buildRecommendations(stats map[string]int, openCount, connCount int, findings []storage.FindingRecord) []map[string]string {
+	var recs []map[string]string
+
+	if critical, ok := stats["critical"]; ok && critical > 0 {
+		recs = append(recs, map[string]string{
+			"priority": "critical",
+			"title":    fmt.Sprintf("Fix %d critical findings", critical),
+			"detail":   "Critical findings require immediate attention. These represent severe security risks that could lead to data breaches or system compromise.",
+		})
+	}
+
+	if high, ok := stats["high"]; ok && high > 0 {
+		recs = append(recs, map[string]string{
+			"priority": "high",
+			"title":    fmt.Sprintf("Address %d high-severity findings", high),
+			"detail":   "High severity findings should be prioritized in your next sprint. These represent significant security weaknesses.",
+		})
+	}
+
+	if openCount > 10 {
+		recs = append(recs, map[string]string{
+			"priority": "medium",
+			"title":    fmt.Sprintf("Triage %d open findings", openCount),
+			"detail":   "You have a backlog of open findings. Review and triage them: resolve, acknowledge, or mark as false positive.",
+		})
+	}
+
+	if connCount == 0 {
+		recs = append(recs, map[string]string{
+			"priority": "info",
+			"title":    "Add your first connection",
+			"detail":   "Connect a GitHub, GitLab, or Bitbucket account to start monitoring your CI/CD pipelines.",
+		})
+	}
+
+	if len(findings) == 0 && connCount > 0 {
+		recs = append(recs, map[string]string{
+			"priority": "info",
+			"title":    "Run your first analysis",
+			"detail":   "You have connections but no findings. Use the Analyze Run or Quick Scan feature to check your pipelines.",
+		})
+	}
+
+	if len(recs) == 0 {
+		recs = append(recs, map[string]string{
+			"priority": "info",
+			"title":    "Looking good!",
+			"detail":   "No critical recommendations at this time. Keep running regular scans to maintain your security posture.",
+		})
+	}
+
+	return recs
 }

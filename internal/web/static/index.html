@@ -469,6 +469,96 @@
       animation: progress 2s ease-in-out infinite;
     }
     @keyframes progress { 0% { width: 0%; } 50% { width: 80%; } 100% { width: 100%; } }
+
+    /* Overview / Dashboard */
+    .overview-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+    .overview-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px;
+    }
+    .overview-card h3 { font-size: 13px; color: var(--muted); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .score-display {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .score-circle {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 28px;
+      font-weight: 800;
+      border: 4px solid;
+      flex-shrink: 0;
+    }
+    .score-circle.excellent { border-color: var(--green); color: var(--green); }
+    .score-circle.good { border-color: var(--blue); color: var(--blue); }
+    .score-circle.fair { border-color: var(--yellow); color: var(--yellow); }
+    .score-circle.poor { border-color: var(--orange); color: var(--orange); }
+    .score-circle.critical { border-color: var(--red); color: var(--red); }
+    .score-label { font-size: 13px; color: var(--muted); }
+    .score-label strong { color: var(--text); display: block; font-size: 15px; margin-bottom: 2px; }
+
+    .trend-chart {
+      display: flex;
+      align-items: flex-end;
+      gap: 4px;
+      height: 60px;
+      padding-top: 8px;
+    }
+    .trend-bar {
+      flex: 1;
+      min-width: 8px;
+      border-radius: 3px 3px 0 0;
+      transition: all 0.3s;
+      cursor: pointer;
+      position: relative;
+    }
+    .trend-bar:hover { opacity: 0.8; }
+    .trend-bar:hover::after {
+      content: attr(data-tip);
+      position: absolute;
+      bottom: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 3px 6px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 10px;
+      border-radius: 4px;
+      white-space: nowrap;
+      margin-bottom: 4px;
+    }
+
+    .rec-list { display: flex; flex-direction: column; gap: 8px; }
+    .rec-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 10px 12px;
+      background: var(--bg);
+      border-radius: var(--radius);
+      border-left: 3px solid;
+    }
+    .rec-item.critical { border-left-color: var(--red); }
+    .rec-item.high { border-left-color: var(--orange); }
+    .rec-item.medium { border-left-color: var(--yellow); }
+    .rec-item.info { border-left-color: var(--blue); }
+    .rec-title { font-size: 13px; font-weight: 600; }
+    .rec-detail { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+    .overview-full { grid-column: 1 / -1; }
   </style>
 </head>
 <body>
@@ -482,8 +572,9 @@
     </div>
     <div class="header-actions">
       <input type="text" class="search-bar" id="global-search" placeholder="Search... (Ctrl+K)" autocomplete="off">
-      <button class="btn btn-outline" onclick="showBrowseModal()" data-tip="Browse pipeline runs">Pipelines</button>
-      <button class="btn btn-outline" onclick="showAnalyzeModal()">Analyze Run</button>
+      <button class="btn btn-outline" onclick="showBrowseModal()">Pipelines</button>
+      <button class="btn btn-outline" onclick="showQuickScanModal()">Quick Scan</button>
+      <button class="btn btn-outline" onclick="showAnalyzeModal()">AI Analyze</button>
       <button class="btn btn-outline" onclick="testAll()">Test All</button>
       <button class="btn btn-primary" onclick="showAddModal()">+ Add</button>
     </div>
@@ -501,12 +592,47 @@
     </div>
 
     <div class="tabs">
-      <div class="tab active" data-tab="connections">Connections <span class="badge" id="badge-conn">0</span></div>
+      <div class="tab active" data-tab="overview">Overview</div>
+      <div class="tab" data-tab="connections">Connections <span class="badge" id="badge-conn">0</span></div>
       <div class="tab" data-tab="findings">Findings <span class="badge" id="badge-findings">0</span></div>
       <div class="tab" data-tab="history">History <span class="badge" id="badge-history">0</span></div>
     </div>
 
-    <div id="tab-connections" class="tab-content active">
+    <div id="tab-overview" class="tab-content active">
+      <div class="overview-grid" id="overview-content">
+        <div class="overview-card">
+          <h3>Security Score</h3>
+          <div class="score-display" id="score-display">
+            <div class="score-circle good" id="score-circle">--</div>
+            <div class="score-label">
+              <strong id="score-grade">Loading...</strong>
+              <span id="score-desc">Calculating security posture</span>
+            </div>
+          </div>
+        </div>
+        <div class="overview-card">
+          <h3>Finding Summary</h3>
+          <div id="finding-summary-chart" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap"></div>
+        </div>
+        <div class="overview-card">
+          <h3>Risk Trend (Last 10 Analyses)</h3>
+          <div class="trend-chart" id="trend-chart"></div>
+          <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:4px">
+            <span>Older</span><span>Recent</span>
+          </div>
+        </div>
+        <div class="overview-card">
+          <h3>Quick Stats</h3>
+          <div id="quick-stats" style="display:grid;grid-template-columns:1fr 1fr;gap:8px"></div>
+        </div>
+        <div class="overview-card overview-full">
+          <h3>Recommendations</h3>
+          <div class="rec-list" id="recommendations-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-connections" class="tab-content">
       <div class="section-header">
         <h2>Connections</h2>
         <div class="filter-bar">
@@ -522,13 +648,17 @@
     <div id="tab-findings" class="tab-content">
       <div class="section-header">
         <h2>Security Findings</h2>
-        <div class="filter-bar">
-          <button class="filter-chip active" data-sev="all" onclick="filterFindings('all')">All</button>
-          <button class="filter-chip" data-sev="critical" onclick="filterFindings('critical')">Critical</button>
-          <button class="filter-chip" data-sev="high" onclick="filterFindings('high')">High</button>
-          <button class="filter-chip" data-sev="medium" onclick="filterFindings('medium')">Medium</button>
-          <button class="filter-chip" data-sev="low" onclick="filterFindings('low')">Low</button>
-          <button class="filter-chip" data-sev="open" onclick="filterFindings('open')">Open Only</button>
+        <div style="display:flex;gap:8px;align-items:center">
+          <div class="filter-bar">
+            <button class="filter-chip active" data-sev="all" onclick="filterFindings('all')">All</button>
+            <button class="filter-chip" data-sev="critical" onclick="filterFindings('critical')">Critical</button>
+            <button class="filter-chip" data-sev="high" onclick="filterFindings('high')">High</button>
+            <button class="filter-chip" data-sev="medium" onclick="filterFindings('medium')">Medium</button>
+            <button class="filter-chip" data-sev="low" onclick="filterFindings('low')">Low</button>
+            <button class="filter-chip" data-sev="open" onclick="filterFindings('open')">Open Only</button>
+          </div>
+          <button class="btn btn-outline btn-sm" onclick="exportFindings('csv')">Export CSV</button>
+          <button class="btn btn-outline btn-sm" onclick="exportFindings('json')">Export JSON</button>
         </div>
       </div>
       <div id="findings-list"></div>
@@ -684,6 +814,45 @@
     </div>
   </div>
 
+  <!-- Quick Scan Modal -->
+  <div class="modal-overlay hidden" id="quick-scan-modal">
+    <div class="modal">
+      <h2>Quick Security Scan</h2>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Rule-based heuristic analysis. No AI API key needed. Instant results.</p>
+      <form id="quick-scan-form" onsubmit="runQuickScan(event)">
+        <div class="form-group">
+          <label>Connection</label>
+          <select id="quick-conn"></select>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Owner / Organization</label>
+            <input type="text" id="quick-owner" placeholder="e.g. my-org" required>
+          </div>
+          <div class="form-group">
+            <label>Repository</label>
+            <input type="text" id="quick-repo" placeholder="e.g. my-repo" required>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Run ID</label>
+          <div style="display:flex;gap:8px">
+            <input type="text" id="quick-run-id" placeholder="e.g. 12345" required style="flex:1">
+            <button type="button" class="btn btn-outline btn-sm" onclick="browseRunsQuick()">Browse</button>
+          </div>
+        </div>
+        <div id="quick-runs-container" style="display:none;margin-bottom:12px">
+          <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;font-weight:600">Recent Runs</label>
+          <div id="quick-runs-list" class="pipeline-runs"></div>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-outline" onclick="closeModal('quick-scan-modal')">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="quick-submit-btn">Run Quick Scan</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
 <script>
 const API = '/api/v1';
 let allConnections = [];
@@ -697,6 +866,7 @@ let autoRefreshInterval = null;
 // ===== Init =====
 document.addEventListener('DOMContentLoaded', () => {
   loadAll();
+  loadOverview();
   startAutoRefresh();
   setupKeyboard();
   setupTabs();
@@ -710,6 +880,7 @@ function setupTabs() {
       document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
       tab.classList.add('active');
       document.getElementById('tab-' + name).classList.add('active');
+      if (name === 'overview') loadOverview();
       if (name === 'findings') loadFindings();
       if (name === 'history') loadHistory();
     });
@@ -729,9 +900,10 @@ function setupKeyboard() {
     }
     // 1-3 for tab switching (when not focused on input)
     if (!['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
-      if (e.key === '1') document.querySelector('[data-tab="connections"]').click();
-      if (e.key === '2') document.querySelector('[data-tab="findings"]').click();
-      if (e.key === '3') document.querySelector('[data-tab="history"]').click();
+      if (e.key === '1') document.querySelector('[data-tab="overview"]').click();
+      if (e.key === '2') document.querySelector('[data-tab="connections"]').click();
+      if (e.key === '3') document.querySelector('[data-tab="findings"]').click();
+      if (e.key === '4') document.querySelector('[data-tab="history"]').click();
       if (e.key === 'n' || e.key === 'N') showAddModal();
       if (e.key === 'a' || e.key === 'A') showAnalyzeModal();
       if (e.key === 'r' || e.key === 'R') loadAll();
@@ -1340,6 +1512,177 @@ function esc(s) {
   const d = document.createElement('div');
   d.textContent = s;
   return d.innerHTML;
+}
+
+// ===== Overview =====
+async function loadOverview() {
+  try {
+    const res = await fetch(API + '/dashboard/overview');
+    const data = await res.json();
+    renderOverview(data);
+  } catch (e) { /* ignore */ }
+}
+
+function renderOverview(data) {
+  // Security Score
+  const score = data.security_score || 0;
+  const circle = document.getElementById('score-circle');
+  const grade = document.getElementById('score-grade');
+  const desc = document.getElementById('score-desc');
+  circle.textContent = score;
+  circle.className = 'score-circle ' + (score >= 90 ? 'excellent' : score >= 70 ? 'good' : score >= 50 ? 'fair' : score >= 30 ? 'poor' : 'critical');
+  const gradeText = score >= 90 ? 'Excellent' : score >= 70 ? 'Good' : score >= 50 ? 'Fair' : score >= 30 ? 'Needs Work' : 'Critical';
+  grade.textContent = gradeText + ' Security Posture';
+  desc.textContent = `${data.total_analyses || 0} analyses, ${data.open_findings || 0} open findings`;
+
+  // Finding Summary
+  const summaryEl = document.getElementById('finding-summary-chart');
+  const sevs = data.severity_counts || {};
+  const sevOrder = [
+    { key: 'critical', label: 'Critical', color: 'var(--red)' },
+    { key: 'high', label: 'High', color: 'var(--orange)' },
+    { key: 'medium', label: 'Medium', color: 'var(--yellow)' },
+    { key: 'low', label: 'Low', color: 'var(--green)' },
+    { key: 'open', label: 'Open', color: 'var(--blue)' },
+  ];
+  summaryEl.innerHTML = sevOrder.map(s => `
+    <div style="text-align:center">
+      <div style="font-size:24px;font-weight:700;color:${s.color}">${sevs[s.key] || 0}</div>
+      <div style="font-size:11px;color:var(--muted)">${s.label}</div>
+    </div>
+  `).join('');
+
+  // Trend Chart
+  const trendEl = document.getElementById('trend-chart');
+  const trend = (data.recent_trend || []).reverse();
+  if (trend.length === 0) {
+    trendEl.innerHTML = '<div style="font-size:12px;color:var(--muted);padding:16px">No analysis data yet. Run a scan to see trends.</div>';
+  } else {
+    const maxScore = Math.max(...trend.map(t => t.risk_score), 1);
+    trendEl.innerHTML = trend.map(t => {
+      const h = Math.max(4, (t.risk_score / maxScore) * 60);
+      const color = t.risk_score >= 80 ? 'var(--red)' : t.risk_score >= 60 ? 'var(--orange)' : t.risk_score >= 30 ? 'var(--yellow)' : 'var(--green)';
+      return `<div class="trend-bar" style="height:${h}px;background:${color}" data-tip="Score: ${t.risk_score} | ${t.findings} findings | ${t.connection} | ${t.date}"></div>`;
+    }).join('');
+  }
+
+  // Quick Stats
+  const statsEl = document.getElementById('quick-stats');
+  const oldest = data.oldest_open ? daysSince(data.oldest_open) + ' days' : 'N/A';
+  statsEl.innerHTML = [
+    { label: 'Connections', value: data.connections || 0 },
+    { label: 'Total Analyses', value: data.total_analyses || 0 },
+    { label: 'Total Findings', value: data.total_findings || 0 },
+    { label: 'Oldest Open', value: oldest },
+  ].map(s => `
+    <div style="background:var(--bg);padding:10px;border-radius:var(--radius);text-align:center">
+      <div style="font-size:18px;font-weight:700">${s.value}</div>
+      <div style="font-size:11px;color:var(--muted)">${s.label}</div>
+    </div>
+  `).join('');
+
+  // Recommendations
+  const recsEl = document.getElementById('recommendations-list');
+  const recs = data.recommendations || [];
+  if (recs.length === 0) {
+    recsEl.innerHTML = '<div style="font-size:13px;color:var(--muted);padding:12px">No recommendations at this time.</div>';
+  } else {
+    recsEl.innerHTML = recs.map(r => `
+      <div class="rec-item ${r.priority}">
+        <div>
+          <div class="rec-title">${esc(r.title)}</div>
+          <div class="rec-detail">${esc(r.detail)}</div>
+        </div>
+      </div>
+    `).join('');
+  }
+}
+
+function daysSince(dateStr) {
+  const d = new Date(dateStr);
+  const now = new Date();
+  return Math.floor((now - d) / (1000 * 60 * 60 * 24));
+}
+
+// ===== Quick Scan =====
+async function showQuickScanModal() {
+  const res = await fetch(API + '/connections');
+  const data = await res.json();
+  document.getElementById('quick-conn').innerHTML = (data.connections || []).map(c =>
+    `<option value="${esc(c.name)}">${esc(c.name)} (${c.platform})</option>`
+  ).join('');
+  document.getElementById('quick-runs-container').style.display = 'none';
+  document.getElementById('quick-scan-modal').classList.remove('hidden');
+}
+
+async function browseRunsQuick() {
+  const conn = document.getElementById('quick-conn').value;
+  const owner = document.getElementById('quick-owner').value;
+  const repo = document.getElementById('quick-repo').value;
+  if (!conn || !owner || !repo) { toast('Fill in connection, owner, and repo first', 'error'); return; }
+  const container = document.getElementById('quick-runs-container');
+  const list = document.getElementById('quick-runs-list');
+  container.style.display = 'block';
+  list.innerHTML = '<div class="skeleton"></div><div class="skeleton"></div>';
+  try {
+    const res = await fetch(`${API}/pipelines/runs?connection=${encodeURIComponent(conn)}&owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}&limit=10`);
+    const data = await res.json();
+    if (!res.ok) { list.innerHTML = `<div class="empty-state"><p>${esc(data.error)}</p></div>`; return; }
+    const runs = data.runs || [];
+    if (runs.length === 0) { list.innerHTML = '<div class="empty-state"><p>No recent runs</p></div>'; return; }
+    list.innerHTML = runs.map(r => {
+      const status = (r.Status || '').toLowerCase();
+      return `
+        <div class="run-card" style="cursor:pointer" onclick="document.getElementById('quick-run-id').value='${esc(r.ID)}';document.getElementById('quick-runs-container').style.display='none';toast('Run ${esc(r.ID)} selected','info')">
+          <div class="run-status ${status}"></div>
+          <div class="run-info">
+            <div class="run-title">#${esc(r.ID)}</div>
+            <div class="run-meta"><span>${status}</span>${r.Branch ? `<span>${esc(r.Branch)}</span>` : ''}</div>
+          </div>
+        </div>`;
+    }).join('');
+  } catch (e) { list.innerHTML = '<div class="empty-state"><p>Failed to fetch runs</p></div>'; }
+}
+
+async function runQuickScan(e) {
+  e.preventDefault();
+  const btn = document.getElementById('quick-submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Scanning...';
+  const body = {
+    connection_name: document.getElementById('quick-conn').value,
+    owner: document.getElementById('quick-owner').value,
+    repo: document.getElementById('quick-repo').value,
+    run_id: document.getElementById('quick-run-id').value,
+  };
+  try {
+    const res = await fetch(API + '/analysis/quick', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) { toast(data.error || 'Scan failed', 'error'); return; }
+    const count = data.findings ? data.findings.length : 0;
+    toast(`Quick scan complete: ${count} findings, risk score ${data.risk_score}/100`, 'success');
+    closeModal('quick-scan-modal');
+    document.getElementById('quick-scan-form').reset();
+    loadFindingStats();
+    loadOverview();
+    document.querySelector('[data-tab="findings"]').click();
+  } catch (err) {
+    toast('Network error', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Run Quick Scan';
+  }
+}
+
+// ===== Export =====
+function exportFindings(format) {
+  const url = API + '/analysis/findings/export?format=' + format;
+  window.open(url, '_blank');
+  toast('Export started', 'info');
 }
 </script>
 </body>
