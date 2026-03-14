@@ -29,4 +29,5 @@ vendor/
 # SQLite database files
 *.db
 *.db-wal
-*.db-shmpipewarden
+*.db-shm
+pipewarden
