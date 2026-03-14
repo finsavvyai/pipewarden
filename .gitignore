@@ -29,4 +29,4 @@ vendor/
 # SQLite database files
 *.db
 *.db-wal
-*.db-shm
+*.db-shmpipewarden
